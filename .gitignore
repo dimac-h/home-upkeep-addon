@@ -54,3 +54,6 @@ pnpm-debug.log*
 *.local
 .idea/
 .store/
+
+# Local dev Home Assistant instance state
+dev/config/
