@@ -213,7 +213,7 @@ container boundary (HA Core cannot access the add-on's `/data`).
 - **Fallback — JSON files.** Import from a copy of the add-on's `list_<id>.json`
   files (`{version, list, tasks[]}`) placed at a path the import step reads.
 - **Sequencing.** The add-on/FastAPI backend stays runnable through the
-  transition; decommissioning (M6) happens only after the importer is validated
+  transition; decommissioning (M7) happens only after the importer is validated
   against a live add-on. In the throwaway dev container (no add-on present), the
   importer is tested against sample JSON files and/or a temporarily-run backend.
 - **Safety.** Import into a non-empty store is guarded (fresh-install adopts IDs
@@ -259,7 +259,7 @@ retired/redirected.
 
 Split across **two implementation plans**:
 
-**Plan 1 — Backend + skeleton (M1–M3)**
+**Plan 1 — Backend, skeleton, migration (M1–M4)**
 - **M1** Integration skeleton: `manifest.json`, `config_flow.py`, `__init__.py`,
   `panel.py` registering a minimal Lit `<home-upkeep-panel>` ("hello, N
   entities") served from `frontend/dist`. Update `dev/docker-compose.yml`.
@@ -267,14 +267,16 @@ Split across **two implementation plans**:
   `hass.connection` available.
 - **M2** Port `models.py`, `store.py` (HA `Store`), `logic.py` + unit tests.
 - **M3** WS command surface + subscription + tests (`hass_ws_client`).
+- **M4** Data migration importer (API + JSON) + tests. Placed here (right after
+  the store and WS API exist) so the store can be populated with real add-on
+  data early — enabling dogfooding via the WS API before the Lit UI is built.
 
-**Plan 2 — Frontend, migration, cleanup (M4–M6)**
-- **M4** Lit frontend rewrite: `ha-api.ts` client, state controller, all
+**Plan 2 — Frontend, todo entities, cleanup (M5–M7)**
+- **M5** Lit frontend rewrite: `ha-api.ts` client, state controller, all
   components + dialogs, exact-styling port; full CRUD + live updates working
   against M3.
-- **M5** `todo` entities folded in + tests; data migration importer (API +
-  JSON) + tests.
-- **M6** Decommission add-on scaffolding; HACS packaging; docs/`CLAUDE.md`
+- **M6** `todo` entities folded in + tests.
+- **M7** Decommission add-on scaffolding; HACS packaging; docs/`CLAUDE.md`
   update; retire `home-upkeep-component`.
 
 ## 15. Risks & open questions
