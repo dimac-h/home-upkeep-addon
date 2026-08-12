@@ -1,0 +1,25 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Home Upkeep",
+        "description": "Set up the Home Upkeep panel."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Home Upkeep is already configured. Only a single instance is allowed."
+    }
+  },
+  "services": {
+    "import_from_json": {
+      "name": "Import from JSON export",
+      "description": "One-time import of lists and tasks from a copy of the add-on's list_<id>.json files.",
+      "fields": {
+        "path": {
+          "name": "Directory path",
+          "description": "Path to a directory containing the add-on's list_<id>.json files."
+        }
+      }
+    }
+  }
+}
