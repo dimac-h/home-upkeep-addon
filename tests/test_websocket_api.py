@@ -224,6 +224,51 @@ async def test_tasks_update_completion_without_period_has_no_followup(
     assert resp["result"]["created_task"] is None
 
 
+async def test_tasks_update_accepts_explicit_null_fields(
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """
+    Explicit null for due_date/reschedule_period/completed_at is valid.
+
+    The Lit edit-task dialog sends explicit `null` (not an omitted key) to
+    represent "field is unset", matching the add-on REST API's nullable
+    fields. A regression once made the whole message fail schema
+    validation whenever any of these were null, silently dropping every
+    other field in the same update (e.g. prohibited_months).
+    """
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id(
+        {
+            "type": "home_upkeep/tasks/create",
+            "list_id": 1,
+            "title": "Mop floors",
+            "due_date": "2026-03-01",
+            "reschedule_period": "1m",
+            "prohibited_months": [7, 8],
+        }
+    )
+    resp = await client.receive_json()
+    task_id = resp["result"]["id"]
+
+    await client.send_json_auto_id(
+        {
+            "type": "home_upkeep/tasks/update",
+            "task_id": task_id,
+            "due_date": "2026-03-01",
+            "reschedule_period": "1m",
+            "reschedule_base": "completed",
+            "completed_at": None,
+            "prohibited_months": [7, 8, 3],
+        }
+    )
+    resp = await client.receive_json()
+    assert resp["success"]
+    assert resp["result"]["task"]["prohibited_months"] == [7, 8, 3]
+
+
 async def test_tasks_snooze(
     setup_integration: MockConfigEntry,
     hass: HomeAssistant,

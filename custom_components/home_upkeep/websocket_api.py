@@ -35,6 +35,14 @@ _RESCHEDULE_PERIOD = vol.Match(r"^[0-9]+[dwm]$")
 _TITLE = vol.All(str, vol.Length(min=1, max=200))
 _DESCRIPTION = vol.Any(None, vol.All(str, vol.Length(max=1000)))
 
+# tasks/update sends explicit `null` to clear these fields (matching the
+# add-on REST API's nullable semantics), so their validators must accept
+# None in addition to a real value.
+_NULLABLE_DATE = vol.Any(None, cv.date)
+_NULLABLE_DATETIME = vol.Any(None, cv.datetime)
+_NULLABLE_RESCHEDULE_PERIOD = vol.Any(None, _RESCHEDULE_PERIOD)
+_NULLABLE_RESCHEDULE_BASE = vol.Any(None, vol.In(["completed", "due"]))
+
 
 def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:
     """Convert an event's StoredTask/StoredList payloads to JSON-safe dicts."""
@@ -233,10 +241,10 @@ async def handle_tasks_create(
         vol.Optional("title"): _TITLE,
         vol.Optional("description"): _DESCRIPTION,
         vol.Optional("completed"): bool,
-        vol.Optional("due_date"): cv.date,
-        vol.Optional("reschedule_period"): _RESCHEDULE_PERIOD,
-        vol.Optional("reschedule_base"): vol.In(["completed", "due"]),
-        vol.Optional("completed_at"): cv.datetime,
+        vol.Optional("due_date"): _NULLABLE_DATE,
+        vol.Optional("reschedule_period"): _NULLABLE_RESCHEDULE_PERIOD,
+        vol.Optional("reschedule_base"): _NULLABLE_RESCHEDULE_BASE,
+        vol.Optional("completed_at"): _NULLABLE_DATETIME,
         vol.Optional("updated_at"): cv.datetime,
         vol.Optional("prohibited_months"): [_MONTH],
         vol.Optional("constraints"): [str],
