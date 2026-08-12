@@ -17,8 +17,9 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, SIGNAL_UPKEEP_CHANGED
+from .const import SIGNAL_UPKEEP_CHANGED
 from .logic import calculate_next_due_date
+from .store import async_get_store
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -33,12 +34,6 @@ _MONTH = vol.All(int, vol.Range(min=1, max=12))
 _RESCHEDULE_PERIOD = vol.Match(r"^[0-9]+[dwm]$")
 _TITLE = vol.All(str, vol.Length(min=1, max=200))
 _DESCRIPTION = vol.Any(None, vol.All(str, vol.Length(max=1000)))
-
-
-def _get_store(hass: HomeAssistant) -> HomeUpkeepStore:
-    """Get the single Home Upkeep store instance."""
-    entries = hass.config_entries.async_entries(DOMAIN)
-    return entries[0].runtime_data
 
 
 def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:
@@ -94,7 +89,7 @@ async def handle_lists_list(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """List all task lists."""
-    store = _get_store(hass)
+    store = async_get_store(hass)
     connection.send_result(msg["id"], [lst.to_storage() for lst in store.list_lists()])
 
 
@@ -109,7 +104,7 @@ async def handle_lists_create(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Create a new task list."""
-    store = _get_store(hass)
+    store = async_get_store(hass)
     lst = store.create_list(msg["name"])
     connection.send_result(msg["id"], lst.to_storage())
 
@@ -126,7 +121,7 @@ async def handle_lists_update(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Rename a task list."""
-    store = _get_store(hass)
+    store = async_get_store(hass)
     lst = store.rename_list(msg["list_id"], msg["name"])
     if lst is None:
         connection.send_error(
@@ -147,7 +142,7 @@ async def handle_lists_delete(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Delete a task list and all its tasks."""
-    store = _get_store(hass)
+    store = async_get_store(hass)
     if not store.delete_list(msg["list_id"]):
         connection.send_error(
             msg["id"], websocket_api.ERR_NOT_FOUND, "List not found"
@@ -170,7 +165,7 @@ async def handle_tasks_list(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """List all tasks for a list."""
-    store = _get_store(hass)
+    store = async_get_store(hass)
     tasks = store.list_tasks(msg["list_id"])
     connection.send_result(msg["id"], [task.to_storage() for task in tasks])
 
@@ -186,7 +181,7 @@ async def handle_tasks_get(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Get a single task by ID."""
-    store = _get_store(hass)
+    store = async_get_store(hass)
     task = store.get_task(msg["task_id"])
     if task is None:
         connection.send_error(
@@ -215,7 +210,7 @@ async def handle_tasks_create(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Create a new task."""
-    store = _get_store(hass)
+    store = async_get_store(hass)
     task = store.create_task(
         msg["list_id"],
         msg["title"],
@@ -252,7 +247,7 @@ async def handle_tasks_update(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Update an existing task, creating a rescheduled follow-up if needed."""
-    store = _get_store(hass)
+    store = async_get_store(hass)
     task = store.update_task(
         msg["task_id"],
         list_id=msg.get("list_id"),
@@ -298,7 +293,7 @@ async def handle_tasks_snooze(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Snooze a task by pushing its due date forward by `period`."""
-    store = _get_store(hass)
+    store = async_get_store(hass)
     updated_at = msg.get("updated_at")
     base_date = (updated_at or dt_util.now()).date()
     new_due_date = calculate_next_due_date(base_date, msg["period"])
@@ -323,7 +318,7 @@ async def handle_tasks_delete(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Delete a task."""
-    store = _get_store(hass)
+    store = async_get_store(hass)
     if not store.delete_task(msg["task_id"]):
         connection.send_error(
             msg["id"], websocket_api.ERR_NOT_FOUND, "Task not found"

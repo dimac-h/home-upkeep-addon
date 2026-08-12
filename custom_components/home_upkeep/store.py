@@ -17,10 +17,20 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 
-from .const import SIGNAL_UPKEEP_CHANGED, STORAGE_KEY, STORAGE_VERSION
+from .const import DOMAIN, SIGNAL_UPKEEP_CHANGED, STORAGE_KEY, STORAGE_VERSION
 from .models import StoredList, StoredTask
 
 SAVE_DELAY = 10
+
+
+class StoreNotEmptyError(Exception):
+    """Raised when a bulk import is attempted into a store that has data."""
+
+
+def async_get_store(hass: HomeAssistant) -> HomeUpkeepStore:
+    """Get the single Home Upkeep store instance (single-instance integration)."""
+    entries = hass.config_entries.async_entries(DOMAIN)
+    return entries[0].runtime_data
 
 
 class HomeUpkeepStore:
@@ -66,6 +76,37 @@ class HomeUpkeepStore:
     def _async_notify(self, event: dict[str, Any]) -> None:
         self._store.async_delay_save(self._data_to_save, SAVE_DELAY)
         async_dispatcher_send(self._hass, SIGNAL_UPKEEP_CHANGED, event)
+
+    async def async_import(
+        self, lists: list[StoredList], tasks: list[StoredTask]
+    ) -> None:
+        """
+        Bulk-load previously-exported lists/tasks, preserving their IDs.
+
+        Refuses to import into a store that already has data, since adopting
+        foreign IDs into a populated store risks ID collisions.
+        """
+        if self._lists or self._tasks:
+            msg = "Cannot import into a store that already has data"
+            raise StoreNotEmptyError(msg)
+
+        self._lists = {lst.id: lst for lst in lists}
+        self._tasks = {task.id: task for task in tasks}
+        if self._lists:
+            self._next_list_id = max(self._lists) + 1
+        if self._tasks:
+            self._next_task_id = max(self._tasks) + 1
+
+        await self._store.async_save(self._data_to_save())
+        async_dispatcher_send(
+            self._hass,
+            SIGNAL_UPKEEP_CHANGED,
+            {
+                "type": "data_imported",
+                "list_count": len(lists),
+                "task_count": len(tasks),
+            },
+        )
 
     # -------- Tasks --------
 

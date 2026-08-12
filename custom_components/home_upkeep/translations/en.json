@@ -9,5 +9,27 @@
     "abort": {
       "single_instance_allowed": "Home Upkeep is already configured. Only a single instance is allowed."
     }
+  },
+  "services": {
+    "import_from_api": {
+      "name": "Import from add-on API",
+      "description": "One-time import of lists and tasks from the still-running Home Upkeep add-on's REST API.",
+      "fields": {
+        "base_url": {
+          "name": "Base URL",
+          "description": "The add-on's base URL, e.g. http://homeassistant.local:8125."
+        }
+      }
+    },
+    "import_from_json": {
+      "name": "Import from JSON export",
+      "description": "One-time import of lists and tasks from a copy of the add-on's list_<id>.json files.",
+      "fields": {
+        "path": {
+          "name": "Directory path",
+          "description": "Path to a directory containing the add-on's list_<id>.json files."
+        }
+      }
+    }
   }
 }

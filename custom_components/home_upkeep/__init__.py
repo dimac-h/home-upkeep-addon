@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from homeassistant.components.frontend import async_remove_panel
 from homeassistant.config_entries import ConfigEntry
 
-from . import panel, websocket_api
+from . import migration, panel, websocket_api
 from .const import PANEL_URL_PATH
 from .store import HomeUpkeepStore
 
@@ -29,6 +29,7 @@ async def async_setup_entry(
     entry.runtime_data = store
 
     websocket_api.async_register(hass)
+    migration.async_register_services(hass)
     await panel.async_register(hass)
     return True
 
@@ -38,5 +39,6 @@ async def async_unload_entry(
     entry: HomeUpkeepConfigEntry,  # noqa: ARG001
 ) -> bool:
     """Unload a Home Upkeep config entry."""
+    migration.async_unregister_services(hass)
     async_remove_panel(hass, PANEL_URL_PATH)
     return True

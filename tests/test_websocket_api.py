@@ -5,28 +5,18 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
-from custom_components.home_upkeep.const import DOMAIN
-
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
     from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
 
-async def _setup_integration(hass: HomeAssistant) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN)
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return entry
-
-
 async def test_lists_crud(
-    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
 ) -> None:
     """Create, list, rename, and delete a list over the websocket API."""
-    await _setup_integration(hass)
     client = await hass_ws_client(hass)
 
     await client.send_json_auto_id(
@@ -72,10 +62,11 @@ async def test_lists_crud(
 
 
 async def test_tasks_crud(
-    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
 ) -> None:
     """Create, get, list, update, and delete a task over the websocket API."""
-    await _setup_integration(hass)
     client = await hass_ws_client(hass)
 
     await client.send_json_auto_id(
@@ -147,10 +138,11 @@ async def test_tasks_crud(
 
 
 async def test_tasks_create_validates_reschedule_period(
-    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
 ) -> None:
     """An invalid reschedule_period is rejected before it reaches the store."""
-    await _setup_integration(hass)
     client = await hass_ws_client(hass)
 
     await client.send_json_auto_id(
@@ -167,10 +159,11 @@ async def test_tasks_create_validates_reschedule_period(
 
 
 async def test_tasks_update_completion_creates_followup(
-    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
 ) -> None:
     """Completing a task with a reschedule_period creates a follow-up task."""
-    await _setup_integration(hass)
     client = await hass_ws_client(hass)
 
     await client.send_json_auto_id(
@@ -206,10 +199,11 @@ async def test_tasks_update_completion_creates_followup(
 
 
 async def test_tasks_update_completion_without_period_has_no_followup(
-    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
 ) -> None:
     """Completing a task with no reschedule_period creates no follow-up."""
-    await _setup_integration(hass)
     client = await hass_ws_client(hass)
 
     await client.send_json_auto_id(
@@ -231,10 +225,11 @@ async def test_tasks_update_completion_without_period_has_no_followup(
 
 
 async def test_tasks_snooze(
-    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
 ) -> None:
     """Snoozing a task pushes its due date forward by the given period."""
-    await _setup_integration(hass)
     client = await hass_ws_client(hass)
 
     await client.send_json_auto_id(
@@ -269,7 +264,9 @@ async def test_tasks_snooze(
 
 
 async def test_subscribe_receives_events(
-    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
 ) -> None:
     """
     Subscribers receive JSON-safe events for every mutation.
@@ -278,7 +275,6 @@ async def test_subscribe_receives_events(
     the pushed event can arrive over the wire before the RPC result for the
     very same command — don't assume ordering between the two.
     """
-    await _setup_integration(hass)
     client = await hass_ws_client(hass)
 
     await client.send_json_auto_id({"type": "home_upkeep/subscribe"})
