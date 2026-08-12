@@ -2,7 +2,7 @@
 name = "home-upkeep-integration"
 version = "0.1.0"
 description = "Home Upkeep Home Assistant custom integration + panel"
-requires-python = ">=3.13"
+requires-python = ">=3.13.2"
 dependencies = []
 
 [dependency-groups]
