@@ -1,11 +1,3 @@
-import_from_api:
-  fields:
-    base_url:
-      required: true
-      example: "http://homeassistant.local:8125"
-      selector:
-        text:
-
 import_from_json:
   fields:
     path:

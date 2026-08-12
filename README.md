@@ -8,18 +8,8 @@ task needs doing on a specific day or time (i.e. it is not a bin day
 reminder!).
 
 Instead, it is useful for tracking tasks that need doing _when you have
-time_ — check what needs doing around the house and garden whenever you have
+time_. Check what needs doing around the house and garden whenever you have
 a free afternoon.
-
-It runs entirely in-process inside Home Assistant Core as a custom
-integration with a Lit-based sidebar panel — no separate container, no
-add-on, nothing else to install.
-
-## About
-
-Home Upkeep is designed around how household tasks actually work in real
-life. Unlike traditional to-do lists that rigidly schedule recurring tasks,
-Home Upkeep adapts to your actual completion patterns.
 
 ### Recurring tasks
 
@@ -50,16 +40,6 @@ spraying in the UK typically only happens between April and October. A
 monthly spraying task will automatically skip the winter months and resume
 in April.
 
-### Constraints
-
-Add custom constraints and notes to tasks to inform you of specific
-conditions (e.g., "apply lawn feed only when rain is forecast"). These
-constraints help you prioritize tasks and make informed decisions about when
-to complete them.
-
-You can snooze tasks if conditions aren't right, ensuring you see them again
-when it's more appropriate to tackle them.
-
 ## Screenshot
 
 <img src="assets/screenshot.png" width="500">
@@ -82,18 +62,71 @@ lists are also available as `todo` entities.
 
 ### Migrating from the old add-on
 
-If you were using the previous Home Upkeep **add-on**, use the
-`home_upkeep.import_from_json` service for a one-time data import:
+If you were using the previous Home Upkeep **add-on**, migrate your data in
+two steps: get it out of the add-on (which needs a browser, not the
+filesystem — see why below), then import it.
 
-1. Copy the add-on's `list_<id>.json` files (from its data folder — reachable
-   via the Samba share, SSH & Terminal, or File editor add-on) to a folder
-   Home Assistant Core can read, e.g. `/config/home_upkeep_import`.
-2. Call `home_upkeep.import_from_json` once, with that folder's path. No
-   conversion needed — it's the exact format the add-on already wrote.
+**1. Export it from the add-on, via your browser**
 
-There's also a `home_upkeep.import_from_api` service that imports directly
-over the add-on's REST API, but most installs won't be reachable this way:
-the add-on only exposes itself via Home Assistant's ingress proxy, which
-isn't a plain HTTP endpoint a service call (or an external script) can use.
-It only works if you've separately exposed the add-on's port to your
-network. `import_from_json` is the path that works for everyone.
+The add-on is only reachable through Home Assistant's ingress proxy — there
+is no directly-dialable port, and its data folder
+(`/addon_configs/<slug>/data`) is isolated from `/config`, so a typical
+File editor/Samba-type add-on can't see it either. But the browser tab
+you're already using to view the add-on's UI *is* authenticated through
+that same ingress proxy — so a script run from that tab can reach the
+add-on's own API the same way its UI already does.
+
+With the add-on's own page open and focused, open your browser's DevTools
+console (F12, or Cmd+Opt+I on macOS) and paste in:
+
+```js
+(async () => {
+  const res = await fetch("./api/lists");
+  if (!res.ok) {
+    console.error(
+      `Could not fetch lists (HTTP ${res.status}). Make sure this console ` +
+        "is open on the Home Upkeep add-on's own tab, not the panel's.",
+    );
+    return;
+  }
+  const lists = await res.json();
+  console.log(`Found ${lists.length} list(s).`);
+
+  for (const list of lists) {
+    const tasks = await (await fetch(`./api/tasks?list_id=${list.id}`)).json();
+    const doc = { version: 1, list, tasks };
+    const blob = new Blob([JSON.stringify(doc, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `list_${list.id}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    console.log(`  list ${list.id} ("${list.name}"): ${tasks.length} task(s) -> list_${list.id}.json`);
+  }
+
+  console.log(
+    "\nDone. If your browser blocked multiple downloads, allow them and re-run this.",
+  );
+})();
+```
+
+This downloads one `list_<id>.json` file per list straight to your
+computer — the exact format the add-on itself writes to disk, so nothing
+needs converting. (Your browser may ask permission after the first
+download to allow the rest — allow it and re-run the script if some are
+missing.)
+
+**2. Import it into the new integration**
+
+1. Upload the downloaded `list_<id>.json` files somewhere Home Assistant
+   Core can read them, e.g. `/config/home_upkeep_import` — using whichever
+   `/config`-capable add-on you already have (File editor, Samba, Studio
+   Code Server, etc.; this step only ever needs `/config`, which those all
+   cover).
+2. Call the `home_upkeep.import_from_json` service once, with that folder's
+   path.

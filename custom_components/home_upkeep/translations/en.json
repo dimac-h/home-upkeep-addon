@@ -11,19 +11,9 @@
     }
   },
   "services": {
-    "import_from_api": {
-      "name": "Import from add-on API",
-      "description": "One-time import over the add-on's REST API. Only works if the add-on's port is directly reachable — most installs only expose it via ingress, which this can't use. Prefer 'Import from JSON export' unless you know you've exposed the port.",
-      "fields": {
-        "base_url": {
-          "name": "Base URL",
-          "description": "The add-on's base URL, e.g. http://homeassistant.local:8125."
-        }
-      }
-    },
     "import_from_json": {
       "name": "Import from JSON export",
-      "description": "One-time import of lists and tasks from a copy of the add-on's list_<id>.json files. This is the recommended path for migrating from the add-on.",
+      "description": "One-time import of lists and tasks from a copy of the add-on's list_<id>.json files.",
       "fields": {
         "path": {
           "name": "Directory path",
