@@ -20,8 +20,11 @@ from homeassistant.util import dt as dt_util
 from .const import SIGNAL_UPKEEP_CHANGED
 from .logic import calculate_next_due_date
 from .migration import async_import_from_docs
-from .store import ImportConflictError, async_get_store
+from .store import _UNSET, ImportConflictError, async_get_store
 
+# ruff (TC002) wants type-only imports under TYPE_CHECKING to avoid an
+# unnecessary runtime import, since `from __future__ import annotations`
+# means annotations are never evaluated at runtime anyway.
 if TYPE_CHECKING:
     from datetime import datetime
 
@@ -257,16 +260,18 @@ async def handle_tasks_update(
 ) -> None:
     """Update an existing task, creating a rescheduled follow-up if needed."""
     store = async_get_store(hass)
+    previous_task = store.get_task(msg["task_id"])
+    was_completed = previous_task is not None and previous_task.completed
     task = store.update_task(
         msg["task_id"],
         list_id=msg.get("list_id"),
         title=msg.get("title"),
         description=msg.get("description"),
         completed=msg.get("completed"),
-        due_date=msg.get("due_date"),
-        reschedule_period=msg.get("reschedule_period"),
-        reschedule_base=msg.get("reschedule_base"),
-        completed_at=msg.get("completed_at"),
+        due_date=msg.get("due_date", _UNSET),
+        reschedule_period=msg.get("reschedule_period", _UNSET),
+        reschedule_base=msg.get("reschedule_base", _UNSET),
+        completed_at=msg.get("completed_at", _UNSET),
         prohibited_months=msg.get("prohibited_months"),
         constraints=msg.get("constraints"),
     )
@@ -276,8 +281,11 @@ async def handle_tasks_update(
         )
         return
 
+    # Only create a follow-up on the completed=false->true transition, not
+    # on every subsequent save of an already-completed recurring task (that
+    # would otherwise create a duplicate follow-up on each unrelated edit).
     created_task = None
-    if task.completed and task.reschedule_period:
+    if not was_completed and task.completed and task.reschedule_period:
         created_task = _create_followup_task(store, task, msg.get("updated_at"))
 
     connection.send_result(

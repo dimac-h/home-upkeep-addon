@@ -24,6 +24,9 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .const import SIGNAL_UPKEEP_CHANGED
 from .store import async_get_store
 
+# ruff (TC002) wants type-only imports under TYPE_CHECKING to avoid an
+# unnecessary runtime import, since `from __future__ import annotations`
+# means annotations are never evaluated at runtime anyway.
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -86,7 +89,14 @@ class HomeUpkeepTodoListEntity(TodoListEntity):
 
     @callback
     def _handle_event(self, event: dict[str, Any]) -> None:
-        if event["type"] not in ("task_created", "task_updated", "task_deleted"):
+        event_type = event["type"]
+        if event_type == "data_imported":
+            # An import may have replaced this list's tasks entirely; the
+            # event doesn't carry per-list detail, so just refresh.
+            self._refresh_items()
+            self.async_write_ha_state()
+            return
+        if event_type not in ("task_created", "task_updated", "task_deleted"):
             return
         if event.get("list_id") != self._list_id:
             return
@@ -170,7 +180,9 @@ async def async_setup_entry(
     @callback
     def _handle_event(event: dict[str, Any]) -> None:
         event_type = event["type"]
-        if event_type in ("list_created", "list_deleted"):
+        if event_type in ("list_created", "list_deleted", "data_imported"):
+            # Imports can add new lists (and overwrite existing ones), so
+            # resync entities the same way as an explicit list_created.
             _sync_lists()
         elif event_type == "list_updated":
             entity = entities.get(event["list"].id)

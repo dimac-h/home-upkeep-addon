@@ -269,6 +269,114 @@ async def test_tasks_update_accepts_explicit_null_fields(
     assert resp["result"]["task"]["prohibited_months"] == [7, 8, 3]
 
 
+async def test_tasks_update_explicit_null_clears_field(
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """
+    Explicit null for a nullable field actually clears it in storage.
+
+    Regression test: `store.update_task` used to guard every field with
+    `if x is not None`, which is indistinguishable from "field omitted",
+    so an explicit `null` sent by the frontend to clear e.g. `due_date`
+    was silently dropped instead of clearing the field.
+    """
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id(
+        {
+            "type": "home_upkeep/tasks/create",
+            "list_id": 1,
+            "title": "Mop floors",
+            "due_date": "2026-03-01",
+            "reschedule_period": "1m",
+        }
+    )
+    resp = await client.receive_json()
+    task_id = resp["result"]["id"]
+
+    await client.send_json_auto_id(
+        {
+            "type": "home_upkeep/tasks/update",
+            "task_id": task_id,
+            "due_date": None,
+            "reschedule_period": None,
+            "reschedule_base": None,
+        }
+    )
+    resp = await client.receive_json()
+    assert resp["success"]
+    task = resp["result"]["task"]
+    assert task["due_date"] is None
+    assert task["reschedule_period"] is None
+    assert task["reschedule_base"] is None
+
+    # Omitting the field entirely on a later update must leave it alone.
+    await client.send_json_auto_id(
+        {
+            "type": "home_upkeep/tasks/update",
+            "task_id": task_id,
+            "title": "Mop floors twice",
+        }
+    )
+    resp = await client.receive_json()
+    assert resp["success"]
+    assert resp["result"]["task"]["due_date"] is None
+
+
+async def test_tasks_update_resave_of_completed_task_has_no_duplicate_followup(
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """
+    Re-saving an already-completed recurring task creates no extra follow-up.
+
+    Regression test: `handle_tasks_update` used to create a follow-up
+    whenever the task was completed and had a `reschedule_period` *after*
+    the update, regardless of whether this update was the one that
+    completed it — so editing an unrelated field on an already-completed
+    recurring task (which the edit dialog always re-sends `completed` for)
+    created a duplicate follow-up task on every save.
+    """
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id(
+        {
+            "type": "home_upkeep/tasks/create",
+            "list_id": 1,
+            "title": "Mop floors",
+            "reschedule_period": "1m",
+        }
+    )
+    resp = await client.receive_json()
+    task_id = resp["result"]["id"]
+
+    await client.send_json_auto_id(
+        {
+            "type": "home_upkeep/tasks/update",
+            "task_id": task_id,
+            "completed": True,
+        }
+    )
+    resp = await client.receive_json()
+    assert resp["success"]
+    assert resp["result"]["created_task"] is not None
+
+    await client.send_json_auto_id(
+        {
+            "type": "home_upkeep/tasks/update",
+            "task_id": task_id,
+            "title": "Mop floors (renamed)",
+            "completed": True,
+        }
+    )
+    resp = await client.receive_json()
+    assert resp["success"]
+    assert resp["result"]["created_task"] is None
+
+
 async def test_tasks_snooze(
     setup_integration: MockConfigEntry,
     hass: HomeAssistant,

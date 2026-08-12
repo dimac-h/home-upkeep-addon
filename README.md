@@ -50,7 +50,7 @@ Home Upkeep is a Home Assistant custom integration, installed via
 [HACS](https://hacs.xyz/):
 
 1. In HACS, add this repository
-   ([`dimac-h/home-upkeep-addon`](https://github.com/dimac-h/home-upkeep-addon))
+   ([`tonyroberts/home-upkeep-addon`](https://github.com/tonyroberts/home-upkeep-addon))
    as a custom repository of type "Integration".
 2. Install "Home Upkeep" from HACS.
 3. Restart Home Assistant.

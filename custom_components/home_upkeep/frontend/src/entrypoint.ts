@@ -394,6 +394,13 @@ export class HomeUpkeepPanel extends LitElement {
           this._tasks = this._tasks.filter((t) => t.id !== event.task_id);
         }
         break;
+      case "data_imported":
+        // An import (possibly from another connected client) may have
+        // added/overwritten lists and the currently-selected list's tasks;
+        // there's no per-list detail on this event, so just refresh both.
+        this._refreshLists();
+        this._refreshTasks();
+        break;
       default:
         break;
     }
@@ -467,6 +474,10 @@ export class HomeUpkeepPanel extends LitElement {
         );
       }
       await this._refreshLists();
+      // The import may have replaced the currently-selected list's tasks
+      // entirely; refresh them too so the view isn't left showing stale
+      // pre-import data.
+      await this._refreshTasks();
       alert(
         `Imported ${result.list_count} list(s) and ${result.task_count} task(s).`,
       );

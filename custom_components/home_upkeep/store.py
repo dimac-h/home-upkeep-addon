@@ -24,6 +24,19 @@ from .models import StoredList, StoredTask
 SAVE_DELAY = 10
 
 
+class _Unset:
+    """
+    Sentinel default for `update_task`'s nullable keyword arguments.
+
+    Distinguishes "caller omitted this argument, leave the field alone"
+    from "caller explicitly passed `None`, clear the field" — both of
+    which would otherwise look identical if the default were `None`.
+    """
+
+
+_UNSET = _Unset()
+
+
 class ImportConflictError(Exception):
     """
     Raised when an import's list IDs collide with existing lists.
@@ -208,14 +221,22 @@ class HomeUpkeepStore:
         title: str | None = None,
         description: str | None = None,
         completed: bool | None = None,
-        due_date: date | None = None,
-        reschedule_period: str | None = None,
-        reschedule_base: str | None = None,
-        completed_at: datetime | None = None,
+        due_date: date | _Unset | None = _UNSET,
+        reschedule_period: str | _Unset | None = _UNSET,
+        reschedule_base: str | _Unset | None = _UNSET,
+        completed_at: datetime | _Unset | None = _UNSET,
         prohibited_months: list[int] | None = None,
         constraints: list[str] | None = None,
     ) -> StoredTask | None:
-        """Update an existing task."""
+        """
+        Update an existing task.
+
+        `due_date`, `reschedule_period`, `reschedule_base`, and
+        `completed_at` default to a sentinel (not `None`) so that passing
+        an explicit `None` clears the field, while omitting the argument
+        leaves it untouched — matching the WS API's nullable-field
+        contract (see `websocket_api.py`'s `vol.Any(None, ...)` schemas).
+        """
         task = self._tasks.get(task_id)
         if task is None:
             return None
@@ -229,13 +250,13 @@ class HomeUpkeepStore:
         if completed is not None:
             task.completed = completed
             task.completed_at = now if completed else None
-        if due_date is not None:
+        if not isinstance(due_date, _Unset):
             task.due_date = due_date
-        if reschedule_period is not None:
+        if not isinstance(reschedule_period, _Unset):
             task.reschedule_period = reschedule_period
-        if reschedule_base is not None:
+        if not isinstance(reschedule_base, _Unset):
             task.reschedule_base = reschedule_base
-        if completed_at is not None:
+        if not isinstance(completed_at, _Unset):
             task.completed_at = completed_at
         if prohibited_months is not None:
             task.prohibited_months = prohibited_months

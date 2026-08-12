@@ -86,6 +86,49 @@ async def test_update_task_sets_completed_at(hass: HomeAssistant) -> None:
     assert store.update_task(999, title="nope") is None
 
 
+async def test_update_task_distinguishes_omitted_from_explicit_none(
+    hass: HomeAssistant,
+) -> None:
+    """
+    Omitting a nullable kwarg leaves it alone; passing `None` clears it.
+
+    `update_task`'s nullable kwargs (`due_date`, `reschedule_period`,
+    `reschedule_base`, `completed_at`) default to a sentinel rather than
+    `None` specifically so the two cases aren't conflated.
+    """
+    store = HomeUpkeepStore(hass)
+    await store.async_load()
+
+    lst = store.create_list("Cleaning")
+    task = store.create_task(
+        lst.id,
+        "Mop floors",
+        None,
+        due_date=date(2026, 3, 1),
+        reschedule_period="1m",
+        reschedule_base="due",
+    )
+
+    # Omitted entirely: unchanged.
+    unchanged = store.update_task(task.id, title="Mop floors (renamed)")
+    assert unchanged is not None
+    assert unchanged.due_date == date(2026, 3, 1)
+    assert unchanged.reschedule_period == "1m"
+    assert unchanged.reschedule_base == "due"
+
+    # Explicit None: cleared.
+    cleared = store.update_task(
+        task.id,
+        due_date=None,
+        reschedule_period=None,
+        reschedule_base=None,
+    )
+    assert cleared is not None
+    assert cleared.due_date is None
+    assert cleared.reschedule_period is None
+    assert cleared.reschedule_base is None
+
+
 async def test_delete_task(hass: HomeAssistant) -> None:
     """Deleting a task removes it; deleting again reports not-found."""
     store = HomeUpkeepStore(hass)

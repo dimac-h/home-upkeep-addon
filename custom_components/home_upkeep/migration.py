@@ -24,6 +24,9 @@ from .const import DOMAIN
 from .models import StoredList, StoredTask
 from .store import ImportConflictError, async_get_store
 
+# ruff (TC002) wants type-only imports under TYPE_CHECKING to avoid an
+# unnecessary runtime import, since `from __future__ import annotations`
+# means annotations are never evaluated at runtime anyway.
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
 
@@ -122,6 +125,10 @@ async def _async_handle_import_from_json(call: ServiceCall) -> None:
         raise HomeAssistantError(str(err)) from err
     except OSError as err:
         msg = f"Could not read add-on export files at {directory}: {err}"
+        raise HomeAssistantError(msg) from err
+    except (KeyError, TypeError, ValueError) as err:
+        # ValueError also covers json.JSONDecodeError from a corrupt file.
+        msg = f"Malformed export data in {directory}: {err}"
         raise HomeAssistantError(msg) from err
     _LOGGER.info(
         "Imported %d lists and %d tasks from %s", list_count, task_count, directory

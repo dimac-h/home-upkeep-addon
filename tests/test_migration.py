@@ -132,3 +132,28 @@ async def test_service_import_from_json_refuses_conflicting_list_id(
             {"path": str(tmp_path)},
             blocking=True,
         )
+
+
+async def test_service_import_from_json_reports_malformed_file(
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    tmp_path: Path,
+) -> None:
+    """
+    A malformed export file surfaces as a HomeAssistantError, not a crash.
+
+    Regression test: the service handler used to only catch
+    `ImportConflictError`/`OSError`, so a corrupt file (bad JSON) or a doc
+    missing the required `list` key propagated as a raw, uncaught
+    `JSONDecodeError`/`KeyError` instead of the friendly error used
+    everywhere else in this module.
+    """
+    (tmp_path / "list_1.json").write_text("{not valid json", encoding="utf-8")
+
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(
+            DOMAIN,
+            migration.SERVICE_IMPORT_FROM_JSON,
+            {"path": str(tmp_path)},
+            blocking=True,
+        )

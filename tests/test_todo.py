@@ -10,6 +10,8 @@ from homeassistant.helpers import entity_registry as er
 from custom_components.home_upkeep.const import DOMAIN
 from custom_components.home_upkeep.store import async_get_store
 
+from .test_store import _imported_list, _imported_task
+
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
     from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -192,3 +194,46 @@ async def test_list_renamed_updates_entity_name(
     await hass.async_block_till_done()
 
     assert hass.states.get(entity_id).name == "Chores"
+
+
+async def test_import_creates_entity_and_refreshes_overwritten_list(
+    setup_integration: MockConfigEntry, hass: HomeAssistant
+) -> None:
+    """
+    An import creates entities for new lists and refreshes overwritten ones.
+
+    Regression test: the store's `async_import` dispatches a
+    `data_imported` event (not `list_created`), which the todo platform's
+    dispatcher handler used to ignore entirely, leaving imported lists
+    without a todo entity until Home Assistant restarted.
+    """
+    store = async_get_store(hass)
+    existing = store.create_list("Cleaning")
+    store.create_task(existing.id, "Old task", None)
+    await hass.async_block_till_done()
+
+    existing_entity_id = _todo_entity_id(hass, existing.id)
+    assert existing_entity_id is not None
+
+    imported_list = _imported_list(existing.id, "Cleaning (imported)")
+    new_list = _imported_list(999, "New list")
+    imported_task = _imported_task(1, existing.id, "Fresh task")
+    new_task = _imported_task(2, 999, "New list task")
+
+    await store.async_import(
+        [imported_list, new_list],
+        [imported_task, new_task],
+        overwrite_list_ids={existing.id},
+    )
+    await hass.async_block_till_done()
+
+    # The overwritten list's todo entity still exists and reflects the
+    # imported task (its old task was replaced entirely).
+    assert hass.states.get(existing_entity_id) is not None
+    [task] = store.list_tasks(existing.id)
+    assert task.title == "Fresh task"
+
+    # The new list gets its own todo entity without a HA restart.
+    new_entity_id = _todo_entity_id(hass, new_list.id)
+    assert new_entity_id is not None
+    assert hass.states.get(new_entity_id) is not None
