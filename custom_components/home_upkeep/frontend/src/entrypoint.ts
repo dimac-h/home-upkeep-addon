@@ -21,6 +21,22 @@ import {
 import { parseDueDate } from "./dates";
 import { buttonStyles, designTokens, sectionStyles } from "./styles";
 
+const LAST_LIST_STORAGE_KEY = "home-upkeep-last-list-id";
+
+function readStoredListId(): number | undefined {
+  const raw = localStorage.getItem(LAST_LIST_STORAGE_KEY);
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function writeStoredListId(id: number | undefined): void {
+  if (id == null) {
+    localStorage.removeItem(LAST_LIST_STORAGE_KEY);
+  } else {
+    localStorage.setItem(LAST_LIST_STORAGE_KEY, String(id));
+  }
+}
+
 function errorMessage(err: unknown): string {
   if (err && typeof err === "object" && "message" in err) {
     return String((err as { message: unknown }).message);
@@ -293,13 +309,17 @@ export class HomeUpkeepPanel extends LitElement {
       this._lists.length &&
       this._selectedListId == null
     ) {
-      this._selectedListId = this._lists[0]?.id;
+      const lastListId = readStoredListId();
+      this._selectedListId = this._lists.some((l) => l.id === lastListId)
+        ? lastListId
+        : this._lists[0]?.id;
     }
     if (
       changed.has("_selectedListId") &&
       changed.get("_selectedListId") !== this._selectedListId
     ) {
       this._refreshTasks();
+      writeStoredListId(this._selectedListId);
     }
   }
 
