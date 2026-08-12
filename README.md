@@ -77,7 +77,12 @@ that same ingress proxy — so a script run from that tab can reach the
 add-on's own API the same way its UI already does.
 
 With the add-on's own page open and focused, open your browser's DevTools
-console (F12, or Cmd+Opt+I on macOS) and paste in:
+console (F12, or Cmd+Opt+I on macOS) and paste in the script below. Most
+browsers show a warning the first time you paste anything into the
+console (something like *"Don't paste code you don't understand"*) and
+require you to type `allow pasting` and press Enter before the paste is
+accepted — if nothing seems to happen after pasting, that's almost
+certainly why; do that, then paste again.
 
 ```js
 (async () => {
