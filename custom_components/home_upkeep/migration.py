@@ -1,10 +1,13 @@
 """
 One-time importer for existing add-on data.
 
-Primary path is the add-on's REST API (while it's still installed and
-running); JSON-file fallback covers copies of its `list_<id>.json` files
-(`{version, list, tasks[]}`) once the add-on is no longer reachable. Since
-the storage models are the ones being ported, the transform is essentially
+`async_import_from_json` (backed by copies of the add-on's `list_<id>.json`
+files, `{version, list, tasks[]}`) is the path that works for everyone: the
+add-on only exposes itself via Home Assistant's ingress proxy, which isn't a
+plain HTTP endpoint this integration (or an external script) can call.
+`async_import_from_api` only works if the add-on's port has been separately
+exposed to the network — not the case for a typical install. Since the
+storage models are the ones being ported, both transforms are essentially
 identity and original int IDs are preserved (see
 `store.HomeUpkeepStore.async_import`).
 """
