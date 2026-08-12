@@ -64,25 +64,22 @@ lists are also available as `todo` entities.
 
 If you were using the previous Home Upkeep **add-on**, migrate your data in
 two steps: get it out of the add-on (which needs a browser, not the
-filesystem — see why below), then import it.
+filesystem, see rationale below), then import it.
 
-**1. Export it from the add-on, via your browser**
+**1. Export your old tasks from the add-on via your browser**
 
-The add-on is only reachable through Home Assistant's ingress proxy — there
-is no directly-dialable port, and its data folder
-(`/addon_configs/<slug>/data`) is isolated from `/config`, so a typical
-File editor/Samba-type add-on can't see it either. But the browser tab
-you're already using to view the add-on's UI *is* authenticated through
-that same ingress proxy — so a script run from that tab can reach the
-add-on's own API the same way its UI already does.
-
-With the add-on's own page open and focused, open your browser's DevTools
+With the app's task list page open and focused, open your browser's DevTools
 console (F12, or Cmd+Opt+I on macOS) and paste in the script below. Most
 browsers show a warning the first time you paste anything into the
 console (something like *"Don't paste code you don't understand"*) and
 require you to type `allow pasting` and press Enter before the paste is
-accepted — if nothing seems to happen after pasting, that's almost
+accepted. If nothing seems to happen after pasting, that's almost
 certainly why; do that, then paste again.
+
+Why? The add-on is only reachable through Home Assistant's ingress proxy, there
+is no directly-dialable port, and its data folder
+(`/addon_configs/<slug>/data`) is isolated from `/config`, so a typical
+File editor/Samba-type add-on can't see it either.
 
 ```js
 (async () => {
@@ -112,7 +109,7 @@ certainly why; do that, then paste again.
 })();
 ```
 
-This prints one JSON block per list — the exact format the add-on itself
+This prints one JSON block per list with the exact format the add-on itself
 writes to disk, so nothing needs converting. It deliberately doesn't try to
 trigger a file download: browsers block or silently swallow downloads
 that aren't tied to a direct user click, which makes that unreliable from
@@ -123,14 +120,7 @@ its `-----` markers in the console output, copy it, and save it as
 **2. Import it into the new integration**
 
 Open the Home Upkeep panel and click the upload icon next to **New List**,
-then pick the `list_<id>.json` file(s) you just saved — no `/config`
-filesystem access needed. If a list with the same ID already exists (e.g.
+then pick the `list_<id>.json` file(s) you just saved. If a list with the same ID already exists (e.g.
 you've already created some lists by hand, or you're re-running the
 import), you'll be asked to confirm overwriting it before anything changes;
 non-conflicting lists import right away.
-
-Alternatively, for scripted/bulk imports: upload the files somewhere Home
-Assistant Core can read them (e.g. `/config/home_upkeep_import`) and call
-the `home_upkeep.import_from_json` service with that folder's path. This
-path has no way to confirm overwrites interactively, so it fails outright
-if any list ID in the folder already exists.

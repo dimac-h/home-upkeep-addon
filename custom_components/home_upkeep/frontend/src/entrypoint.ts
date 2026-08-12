@@ -68,7 +68,7 @@ export class HomeUpkeepPanel extends LitElement {
 
   @state() private _selectedListId: number | undefined;
 
-  @state() private _loading = true;
+  @state() private _loading = false;
 
   @state() private _error: string | null = null;
 

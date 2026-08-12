@@ -54,7 +54,7 @@ def test_find_first_non_prohibited_month_current_month_ok() -> None:
 
 
 def test_find_first_non_prohibited_month_rolls_forward() -> None:
-    """Current month is prohibited: roll forward to next allowed month."""
+    """The current month is prohibited: roll forward to the next allowed month."""
     assert find_first_non_prohibited_month(date(2026, 3, 15), [3, 4]) == date(
         2026, 5, 1
     )
