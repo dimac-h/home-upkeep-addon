@@ -8,7 +8,7 @@ from homeassistant.components.frontend import async_remove_panel
 from homeassistant.config_entries import ConfigEntry
 
 from . import migration, panel, websocket_api
-from .const import PANEL_URL_PATH
+from .const import PANEL_URL_PATH, PLATFORMS
 from .store import HomeUpkeepStore
 
 # ruff (TC002) wants type-only imports under TYPE_CHECKING to avoid an
@@ -31,14 +31,15 @@ async def async_setup_entry(
     websocket_api.async_register(hass)
     migration.async_register_services(hass)
     await panel.async_register(hass)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(
-    hass: HomeAssistant,
-    entry: HomeUpkeepConfigEntry,  # noqa: ARG001
+    hass: HomeAssistant, entry: HomeUpkeepConfigEntry
 ) -> bool:
     """Unload a Home Upkeep config entry."""
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     migration.async_unregister_services(hass)
     async_remove_panel(hass, PANEL_URL_PATH)
-    return True
+    return unloaded
