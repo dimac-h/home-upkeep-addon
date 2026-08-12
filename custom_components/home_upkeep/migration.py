@@ -15,14 +15,14 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN
 from .models import StoredList, StoredTask
-from .store import StoreNotEmptyError, async_get_store
+from .store import ImportConflictError, async_get_store
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
@@ -36,19 +36,28 @@ SERVICE_IMPORT_FROM_JSON = "import_from_json"
 _IMPORT_FROM_JSON_SCHEMA = vol.Schema({vol.Required("path"): str})
 
 
-def _read_json_files(directory: str) -> tuple[list[StoredList], list[StoredTask]]:
-    """
-    Parse add-on `list_<id>.json` files from a directory.
-
-    Blocking (filesystem I/O) — call via `hass.async_add_executor_job`.
-    """
+def _parse_docs(
+    docs: list[dict[str, Any]],
+) -> tuple[list[StoredList], list[StoredTask]]:
+    """Parse `{version, list, tasks}` docs into StoredList/StoredTask objects."""
     lists: list[StoredList] = []
     tasks: list[StoredTask] = []
-    for path in sorted(Path(directory).glob("list_*.json")):
-        doc = json.loads(path.read_text(encoding="utf-8"))
+    for doc in docs:
         lists.append(StoredList.from_storage(doc["list"]))
         tasks.extend(StoredTask.from_storage(t) for t in doc.get("tasks", []))
     return lists, tasks
+
+
+def _read_json_files(directory: str) -> list[dict[str, Any]]:
+    """
+    Read add-on `list_<id>.json` files from a directory.
+
+    Blocking (filesystem I/O) — call via `hass.async_add_executor_job`.
+    """
+    return [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted(Path(directory).glob("list_*.json"))
+    ]
 
 
 async def async_import_from_json(
@@ -66,9 +75,39 @@ async def async_import_from_json(
         The number of (lists, tasks) imported.
 
     """
-    lists, tasks = await hass.async_add_executor_job(_read_json_files, directory)
-    await store.async_import(lists, tasks)
-    return len(lists), len(tasks)
+    docs = await hass.async_add_executor_job(_read_json_files, directory)
+    lists, tasks = _parse_docs(docs)
+    return await store.async_import(lists, tasks)
+
+
+async def async_import_from_docs(
+    store: HomeUpkeepStore,
+    docs: list[dict[str, Any]],
+    *,
+    overwrite_list_ids: set[int] | None = None,
+) -> tuple[int, int]:
+    """
+    Import lists/tasks from already-parsed `{version, list, tasks}` docs.
+
+    Used by the panel's Import button: the browser reads the user's
+    `list_<id>.json` files directly (via the File API) and sends their
+    parsed content over the WS connection, so no `/config` filesystem
+    access is needed at all.
+
+    Args:
+        store: The store to import into.
+        docs: Parsed `{version, list, tasks}` docs, one per list.
+        overwrite_list_ids: IDs of conflicting lists the user has confirmed
+            overwriting (see `HomeUpkeepStore.async_import`).
+
+    Returns:
+        The number of (lists, tasks) imported.
+
+    """
+    lists, tasks = _parse_docs(docs)
+    return await store.async_import(
+        lists, tasks, overwrite_list_ids=overwrite_list_ids
+    )
 
 
 async def _async_handle_import_from_json(call: ServiceCall) -> None:
@@ -79,7 +118,7 @@ async def _async_handle_import_from_json(call: ServiceCall) -> None:
         list_count, task_count = await async_import_from_json(
             call.hass, store, directory
         )
-    except StoreNotEmptyError as err:
+    except ImportConflictError as err:
         raise HomeAssistantError(str(err)) from err
     except OSError as err:
         msg = f"Could not read add-on export files at {directory}: {err}"

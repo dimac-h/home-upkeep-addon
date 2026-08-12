@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
+import pytest
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from pytest_homeassistant_custom_component.common import flush_store
 
 from custom_components.home_upkeep.const import SIGNAL_UPKEEP_CHANGED
-from custom_components.home_upkeep.store import HomeUpkeepStore
+from custom_components.home_upkeep.models import StoredList, StoredTask
+from custom_components.home_upkeep.store import HomeUpkeepStore, ImportConflictError
 
 # ruff (TC002) wants type-only imports under TYPE_CHECKING to avoid an
 # unnecessary runtime import, since `from __future__ import annotations`
@@ -155,3 +157,112 @@ async def test_persistence_round_trip(hass: HomeAssistant) -> None:
     assert task.due_date == date(2026, 3, 1)
     assert task.reschedule_period == "1m"
     assert task.prohibited_months == [7, 8]
+
+
+def _imported_list(list_id: int, name: str) -> StoredList:
+    now = datetime.now(UTC)
+    return StoredList(id=list_id, name=name, created_at=now, updated_at=now)
+
+
+def _imported_task(task_id: int, list_id: int, title: str = "Task") -> StoredTask:
+    now = datetime.now(UTC)
+    return StoredTask(
+        id=task_id,
+        list_id=list_id,
+        title=title,
+        description=None,
+        completed=False,
+        due_date=None,
+        reschedule_period=None,
+        reschedule_base=None,
+        completed_at=None,
+        created_at=now,
+        updated_at=now,
+        prohibited_months=[],
+        constraints=[],
+    )
+
+
+async def test_async_import_into_empty_store(hass: HomeAssistant) -> None:
+    """Importing into an empty store preserves original list/task IDs."""
+    store = HomeUpkeepStore(hass)
+    await store.async_load()
+    task_id = 5
+
+    list_count, task_count = await store.async_import(
+        [_imported_list(1, "Cleaning")], [_imported_task(task_id, 1, "Mop floors")]
+    )
+
+    assert (list_count, task_count) == (1, 1)
+    assert [lst.id for lst in store.list_lists()] == [1]
+    [task] = store.list_tasks(1)
+    assert task.id == task_id
+
+
+async def test_async_import_merges_alongside_existing_data(
+    hass: HomeAssistant,
+) -> None:
+    """A non-conflicting list ID imports alongside pre-existing lists."""
+    store = HomeUpkeepStore(hass)
+    await store.async_load()
+    existing = store.create_list("Existing")  # takes list ID 1
+
+    await store.async_import(
+        [_imported_list(99, "Cleaning")], [_imported_task(1, 99, "Mop floors")]
+    )
+
+    assert sorted(lst.id for lst in store.list_lists()) == [existing.id, 99]
+    [task] = store.list_tasks(99)
+    assert task.id == 1  # no collision with the existing store's own task IDs
+
+
+async def test_async_import_remaps_colliding_task_id(hass: HomeAssistant) -> None:
+    """An imported task ID that collides with an unrelated task gets a new ID."""
+    store = HomeUpkeepStore(hass)
+    await store.async_load()
+    existing_list = store.create_list("Existing")
+    existing_task = store.create_task(existing_list.id, "Existing task", None)
+    assert existing_task.id == 1
+
+    await store.async_import(
+        [_imported_list(99, "Cleaning")],
+        [_imported_task(1, 99, "Mop floors")],  # id=1 collides with existing_task
+    )
+
+    [imported_task] = store.list_tasks(99)
+    assert imported_task.id != existing_task.id
+    assert imported_task.title == "Mop floors"
+
+
+async def test_async_import_refuses_conflicting_list_id(hass: HomeAssistant) -> None:
+    """A list ID that already exists is refused without `overwrite_list_ids`."""
+    store = HomeUpkeepStore(hass)
+    await store.async_load()
+    existing = store.create_list("Existing")  # takes list ID 1
+
+    with pytest.raises(ImportConflictError) as exc_info:
+        await store.async_import([_imported_list(1, "Cleaning")], [])
+
+    assert exc_info.value.conflicting_lists == [existing]
+    assert [lst.name for lst in store.list_lists()] == ["Existing"]
+
+
+async def test_async_import_overwrites_confirmed_conflict(
+    hass: HomeAssistant,
+) -> None:
+    """Confirming `overwrite_list_ids` replaces the list and its old tasks."""
+    store = HomeUpkeepStore(hass)
+    await store.async_load()
+    existing_list = store.create_list("Existing")  # takes list ID 1
+    store.create_task(existing_list.id, "Old task", None)
+
+    await store.async_import(
+        [_imported_list(1, "Cleaning")],
+        [_imported_task(1, 1, "New task")],
+        overwrite_list_ids={1},
+    )
+
+    [lst] = store.list_lists()
+    assert lst.name == "Cleaning"
+    [task] = store.list_tasks(1)
+    assert task.title == "New task"

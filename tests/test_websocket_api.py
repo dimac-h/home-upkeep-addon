@@ -349,3 +349,206 @@ async def test_subscribe_receives_events(
     event = next(m["event"] for m in (msg_1, msg_2) if m["type"] == "event")
     assert event["type"] == "task_created"
     assert event["task"]["title"] == "Mop floors"
+
+
+async def test_import_json_preserves_ids(
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """import_json loads uploaded export docs, preserving original IDs."""
+    client = await hass_ws_client(hass)
+    task_id = 5
+    docs = [
+        {
+            "version": 1,
+            "list": {
+                "id": 1,
+                "name": "Cleaning",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+            },
+            "tasks": [
+                {
+                    "id": task_id,
+                    "list_id": 1,
+                    "title": "Mop floors",
+                    "description": None,
+                    "completed": False,
+                    "due_date": "2026-03-01",
+                    "reschedule_period": "1m",
+                    "reschedule_base": "completed",
+                    "completed_at": None,
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "updated_at": "2026-01-01T00:00:00+00:00",
+                    "prohibited_months": [7, 8],
+                    "constraints": [],
+                }
+            ],
+        }
+    ]
+
+    await client.send_json_auto_id({"type": "home_upkeep/import_json", "docs": docs})
+    resp = await client.receive_json()
+    assert resp["success"]
+    assert resp["result"] == {
+        "imported": True,
+        "conflicts": [],
+        "list_count": 1,
+        "task_count": 1,
+    }
+
+    await client.send_json_auto_id({"type": "home_upkeep/lists/list"})
+    resp = await client.receive_json()
+    assert [lst["id"] for lst in resp["result"]] == [1]
+
+    await client.send_json_auto_id(
+        {"type": "home_upkeep/tasks/list", "list_id": 1}
+    )
+    resp = await client.receive_json()
+    [task] = resp["result"]
+    assert task["id"] == task_id
+    assert task["title"] == "Mop floors"
+    assert task["prohibited_months"] == [7, 8]
+
+
+async def test_import_json_reports_conflicting_list(
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """A list ID that already exists is reported as a conflict, not an error."""
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id(
+        {"type": "home_upkeep/lists/create", "name": "Existing"}
+    )
+    await client.receive_json()
+
+    await client.send_json_auto_id(
+        {
+            "type": "home_upkeep/import_json",
+            "docs": [
+                {
+                    "list": {
+                        "id": 1,
+                        "name": "Cleaning",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    },
+                    "tasks": [],
+                }
+            ],
+        }
+    )
+    resp = await client.receive_json()
+    assert resp["success"]
+    assert resp["result"] == {
+        "imported": False,
+        "conflicts": [{"id": 1, "name": "Existing"}],
+    }
+
+
+async def test_import_json_merges_into_non_empty_store(
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """A non-conflicting list ID imports fine alongside existing data."""
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id(
+        {"type": "home_upkeep/lists/create", "name": "Existing"}
+    )
+    await client.receive_json()
+
+    await client.send_json_auto_id(
+        {
+            "type": "home_upkeep/import_json",
+            "docs": [
+                {
+                    "list": {
+                        "id": 99,
+                        "name": "Cleaning",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    },
+                    "tasks": [],
+                }
+            ],
+        }
+    )
+    resp = await client.receive_json()
+    assert resp["success"]
+    assert resp["result"] == {
+        "imported": True,
+        "conflicts": [],
+        "list_count": 1,
+        "task_count": 0,
+    }
+
+    await client.send_json_auto_id({"type": "home_upkeep/lists/list"})
+    resp = await client.receive_json()
+    assert sorted(lst["id"] for lst in resp["result"]) == [1, 99]
+
+
+async def test_import_json_overwrites_confirmed_conflict(
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """Resending with `overwrite_list_ids` replaces the conflicting list."""
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id(
+        {"type": "home_upkeep/lists/create", "name": "Existing"}
+    )
+    await client.receive_json()
+
+    await client.send_json_auto_id(
+        {
+            "type": "home_upkeep/import_json",
+            "docs": [
+                {
+                    "list": {
+                        "id": 1,
+                        "name": "Cleaning",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    },
+                    "tasks": [],
+                }
+            ],
+            "overwrite_list_ids": [1],
+        }
+    )
+    resp = await client.receive_json()
+    assert resp["success"]
+    assert resp["result"] == {
+        "imported": True,
+        "conflicts": [],
+        "list_count": 1,
+        "task_count": 0,
+    }
+
+    await client.send_json_auto_id({"type": "home_upkeep/lists/list"})
+    resp = await client.receive_json()
+    [lst] = resp["result"]
+    assert lst["id"] == 1
+    assert lst["name"] == "Cleaning"
+
+
+async def test_import_json_rejects_malformed_docs(
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """A doc missing the required "list" key is rejected with a clear error."""
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id(
+        {"type": "home_upkeep/import_json", "docs": [{"tasks": []}]}
+    )
+    resp = await client.receive_json()
+    assert resp["success"] is False
+    assert resp["error"]["code"] == "invalid_format"

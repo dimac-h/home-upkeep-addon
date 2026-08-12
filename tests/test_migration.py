@@ -11,7 +11,7 @@ from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.home_upkeep import migration
 from custom_components.home_upkeep.const import DOMAIN
-from custom_components.home_upkeep.store import StoreNotEmptyError, async_get_store
+from custom_components.home_upkeep.store import ImportConflictError, async_get_store
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -67,17 +67,17 @@ async def test_import_from_json_preserves_ids(
     assert task.due_date == date(2026, 3, 1)
 
 
-async def test_import_from_json_refuses_non_empty_store(
+async def test_import_from_json_refuses_conflicting_list_id(
     setup_integration: MockConfigEntry,
     hass: HomeAssistant,
     tmp_path: Path,
 ) -> None:
-    """Importing into a store that already has data is refused."""
+    """Importing a list ID that already exists is refused."""
     await _write_export_file(tmp_path)
     store = async_get_store(hass)
-    store.create_list("Existing")
+    store.create_list("Existing")  # takes list ID 1, matching LIST_DOC's ID
 
-    with pytest.raises(StoreNotEmptyError):
+    with pytest.raises(ImportConflictError):
         await migration.async_import_from_json(hass, store, str(tmp_path))
 
 
@@ -115,15 +115,15 @@ async def test_service_import_from_json_success(
     assert [lst.id for lst in store.list_lists()] == [1]
 
 
-async def test_service_import_from_json_refuses_non_empty_store(
+async def test_service_import_from_json_refuses_conflicting_list_id(
     setup_integration: MockConfigEntry,
     hass: HomeAssistant,
     tmp_path: Path,
 ) -> None:
-    """The service surfaces the store-not-empty guard as a HomeAssistantError."""
+    """The service surfaces the list-conflict guard as a HomeAssistantError."""
     await _write_export_file(tmp_path)
     store = async_get_store(hass)
-    store.create_list("Existing")
+    store.create_list("Existing")  # takes list ID 1, matching LIST_DOC's ID
 
     with pytest.raises(HomeAssistantError):
         await hass.services.async_call(

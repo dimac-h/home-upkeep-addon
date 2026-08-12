@@ -118,13 +118,19 @@ trigger a file download: browsers block or silently swallow downloads
 that aren't tied to a direct user click, which makes that unreliable from
 a pasted console script. Instead, for each list, select the text between
 its `-----` markers in the console output, copy it, and save it as
-`list_<id>.json` (matching the id in the marker) using whichever
-`/config`-capable add-on you already have (File editor, Studio Code
-Server, etc.).
+`list_<id>.json` (matching the id in the marker).
 
 **2. Import it into the new integration**
 
-1. Upload those `list_<id>.json` files somewhere Home Assistant Core can
-   read them, e.g. `/config/home_upkeep_import`.
-2. Call the `home_upkeep.import_from_json` service once, with that folder's
-   path.
+Open the Home Upkeep panel and click the upload icon next to **New List**,
+then pick the `list_<id>.json` file(s) you just saved — no `/config`
+filesystem access needed. If a list with the same ID already exists (e.g.
+you've already created some lists by hand, or you're re-running the
+import), you'll be asked to confirm overwriting it before anything changes;
+non-conflicting lists import right away.
+
+Alternatively, for scripted/bulk imports: upload the files somewhere Home
+Assistant Core can read them (e.g. `/config/home_upkeep_import`) and call
+the `home_upkeep.import_from_json` service with that folder's path. This
+path has no way to confirm overwrites interactively, so it fails outright
+if any list ID in the folder already exists.

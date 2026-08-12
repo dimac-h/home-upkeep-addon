@@ -19,7 +19,8 @@ from homeassistant.util import dt as dt_util
 
 from .const import SIGNAL_UPKEEP_CHANGED
 from .logic import calculate_next_due_date
-from .store import async_get_store
+from .migration import async_import_from_docs
+from .store import ImportConflictError, async_get_store
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -335,6 +336,63 @@ async def handle_tasks_delete(
     connection.send_result(msg["id"], {"success": True})
 
 
+# -------- Migration --------
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "home_upkeep/import_json",
+        vol.Required("docs"): [dict],
+        vol.Optional("overwrite_list_ids"): [int],
+    }
+)
+@websocket_api.async_response
+async def handle_import_json(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """
+    Import lists/tasks from add-on export docs uploaded via the panel.
+
+    A list whose ID already exists is reported back as a conflict
+    (`imported: false`) instead of a WS error, so the panel can ask the
+    user to confirm overwriting it and resend with `overwrite_list_ids`.
+    """
+    store = async_get_store(hass)
+    overwrite_list_ids = set(msg.get("overwrite_list_ids", []))
+    try:
+        list_count, task_count = await async_import_from_docs(
+            store, msg["docs"], overwrite_list_ids=overwrite_list_ids
+        )
+    except ImportConflictError as err:
+        connection.send_result(
+            msg["id"],
+            {
+                "imported": False,
+                "conflicts": [
+                    {"id": lst.id, "name": lst.name}
+                    for lst in err.conflicting_lists
+                ],
+            },
+        )
+        return
+    except (KeyError, TypeError, ValueError) as err:
+        connection.send_error(
+            msg["id"],
+            websocket_api.ERR_INVALID_FORMAT,
+            f"Malformed export data: {err}",
+        )
+        return
+    connection.send_result(
+        msg["id"],
+        {
+            "imported": True,
+            "conflicts": [],
+            "list_count": list_count,
+            "task_count": task_count,
+        },
+    )
+
+
 # -------- Subscription --------
 
 
@@ -367,4 +425,5 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_tasks_update)
     websocket_api.async_register_command(hass, handle_tasks_snooze)
     websocket_api.async_register_command(hass, handle_tasks_delete)
+    websocket_api.async_register_command(hass, handle_import_json)
     websocket_api.async_register_command(hass, handle_subscribe)

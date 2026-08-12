@@ -10,6 +10,7 @@ dispatcher instead of a custom WebSocket `ConnectionManager`.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -23,8 +24,20 @@ from .models import StoredList, StoredTask
 SAVE_DELAY = 10
 
 
-class StoreNotEmptyError(Exception):
-    """Raised when a bulk import is attempted into a store that has data."""
+class ImportConflictError(Exception):
+    """
+    Raised when an import's list IDs collide with existing lists.
+
+    Carries the conflicting `StoredList`s so the caller can ask the user
+    whether to overwrite them, then retry with their IDs in
+    `async_import`'s `overwrite_list_ids`.
+    """
+
+    def __init__(self, conflicting_lists: list[StoredList]) -> None:
+        """Store the conflicting lists for the caller to inspect."""
+        self.conflicting_lists = conflicting_lists
+        names = ", ".join(lst.name for lst in conflicting_lists)
+        super().__init__(f"Would overwrite existing list(s): {names}")
 
 
 def async_get_store(hass: HomeAssistant) -> HomeUpkeepStore:
@@ -78,24 +91,54 @@ class HomeUpkeepStore:
         async_dispatcher_send(self._hass, SIGNAL_UPKEEP_CHANGED, event)
 
     async def async_import(
-        self, lists: list[StoredList], tasks: list[StoredTask]
-    ) -> None:
+        self,
+        lists: list[StoredList],
+        tasks: list[StoredTask],
+        *,
+        overwrite_list_ids: set[int] | None = None,
+    ) -> tuple[int, int]:
         """
-        Bulk-load previously-exported lists/tasks, preserving their IDs.
+        Merge previously-exported lists/tasks into the store, preserving IDs.
 
-        Refuses to import into a store that already has data, since adopting
-        foreign IDs into a populated store risks ID collisions.
+        A list whose ID already exists is a conflict: unless its ID is in
+        `overwrite_list_ids`, the whole import is refused via
+        `ImportConflictError` (carrying the existing lists that would be
+        overwritten) so the caller can ask the user to confirm and retry.
+        Confirmed lists have their existing tasks replaced entirely. Task IDs are
+        remapped on collision with an unrelated task, since preserving the
+        original ID only matters when it doesn't clash with anything.
         """
-        if self._lists or self._tasks:
-            msg = "Cannot import into a store that already has data"
-            raise StoreNotEmptyError(msg)
+        overwrite_list_ids = overwrite_list_ids or set()
+        conflicts = [
+            self._lists[lst.id]
+            for lst in lists
+            if lst.id in self._lists and lst.id not in overwrite_list_ids
+        ]
+        if conflicts:
+            raise ImportConflictError(conflicts)
 
-        self._lists = {lst.id: lst for lst in lists}
-        self._tasks = {task.id: task for task in tasks}
+        tasks_by_list: dict[int, list[StoredTask]] = defaultdict(list)
+        for task in tasks:
+            tasks_by_list[task.list_id].append(task)
+
+        for lst in lists:
+            if lst.id in self._lists:
+                self._tasks = {
+                    tid: t for tid, t in self._tasks.items() if t.list_id != lst.id
+                }
+            self._lists[lst.id] = lst
+            for task in tasks_by_list.get(lst.id, []):
+                task_id = task.id
+                if task_id in self._tasks:
+                    task_id = self._next_task_id
+                    self._next_task_id += 1
+                    task.id = task_id
+                self._tasks[task_id] = task
+
         if self._lists:
-            self._next_list_id = max(self._lists) + 1
+            self._next_list_id = max(self._next_list_id, max(self._lists) + 1)
         if self._tasks:
-            self._next_task_id = max(self._tasks) + 1
+            self._next_task_id = max(self._next_task_id, max(self._tasks) + 1)
 
         await self._store.async_save(self._data_to_save())
         async_dispatcher_send(
@@ -107,6 +150,7 @@ class HomeUpkeepStore:
                 "task_count": len(tasks),
             },
         )
+        return len(lists), len(tasks)
 
     # -------- Tasks --------
 
