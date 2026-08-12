@@ -57,3 +57,5 @@ pnpm-debug.log*
 
 # Local dev Home Assistant instance state
 dev/config/
+/docs/
+/CLAUDE.md
