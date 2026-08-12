@@ -15,8 +15,8 @@ services:
       - "8123:8123"
     volumes:
       - ./config:/config
-      # Serve the built panel bundle straight from the frontend build output.
-      # HA exposes /config/www/** at the URL /local/**.
-      - ../home-upkeep/frontend/dist:/config/www/home-upkeep:ro
+      # Load the Home Upkeep custom integration (built panel bundle lives at
+      # custom_components/home_upkeep/frontend/dist, served by panel.py).
+      - ../custom_components:/config/custom_components:ro
     environment:
       - TZ=Europe/Amsterdam

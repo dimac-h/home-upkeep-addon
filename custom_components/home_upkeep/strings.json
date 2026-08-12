@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Home Upkeep",
+        "description": "Set up the Home Upkeep panel."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Home Upkeep is already configured. Only a single instance is allowed."
+    }
+  }
+}
