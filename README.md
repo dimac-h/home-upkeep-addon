@@ -90,43 +90,36 @@ console (F12, or Cmd+Opt+I on macOS) and paste in:
     return;
   }
   const lists = await res.json();
-  console.log(`Found ${lists.length} list(s).`);
+  console.log(
+    `Found ${lists.length} list(s). Copy each JSON block below (between ` +
+      "the markers) into its own file, named list_<id>.json.",
+  );
 
   for (const list of lists) {
     const tasks = await (await fetch(`./api/tasks?list_id=${list.id}`)).json();
     const doc = { version: 1, list, tasks };
-    const blob = new Blob([JSON.stringify(doc, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `list_${list.id}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    console.log(`  list ${list.id} ("${list.name}"): ${tasks.length} task(s) -> list_${list.id}.json`);
+    console.log(
+      `\n----- list_${list.id}.json (${list.name}, ${tasks.length} task(s)) -----`,
+    );
+    console.log(JSON.stringify(doc, null, 2));
+    console.log(`----- end list_${list.id}.json -----`);
   }
-
-  console.log(
-    "\nDone. If your browser blocked multiple downloads, allow them and re-run this.",
-  );
 })();
 ```
 
-This downloads one `list_<id>.json` file per list straight to your
-computer — the exact format the add-on itself writes to disk, so nothing
-needs converting. (Your browser may ask permission after the first
-download to allow the rest — allow it and re-run the script if some are
-missing.)
+This prints one JSON block per list — the exact format the add-on itself
+writes to disk, so nothing needs converting. It deliberately doesn't try to
+trigger a file download: browsers block or silently swallow downloads
+that aren't tied to a direct user click, which makes that unreliable from
+a pasted console script. Instead, for each list, select the text between
+its `-----` markers in the console output, copy it, and save it as
+`list_<id>.json` (matching the id in the marker) using whichever
+`/config`-capable add-on you already have (File editor, Studio Code
+Server, etc.).
 
 **2. Import it into the new integration**
 
-1. Upload the downloaded `list_<id>.json` files somewhere Home Assistant
-   Core can read them, e.g. `/config/home_upkeep_import` — using whichever
-   `/config`-capable add-on you already have (File editor, Samba, Studio
-   Code Server, etc.; this step only ever needs `/config`, which those all
-   cover).
+1. Upload those `list_<id>.json` files somewhere Home Assistant Core can
+   read them, e.g. `/config/home_upkeep_import`.
 2. Call the `home_upkeep.import_from_json` service once, with that folder's
    path.
