@@ -8,6 +8,11 @@ dependencies = []
 [dependency-groups]
 dev = [
     "pytest-homeassistant-custom-component>=0.13.316",
+    # HA's runtime auto-installs manifest-declared component requirements
+    # (like frontend's) on first load; the test harness doesn't, so it must
+    # be pinned explicitly to match whatever `frontend`'s manifest.json
+    # requires for the homeassistant version pytest-homeassistant-custom-component pulls in.
+    "home-assistant-frontend==20260128.6",
     "ruff>=0.14.1",
 ]
 

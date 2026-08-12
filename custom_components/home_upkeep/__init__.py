@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from homeassistant.components.frontend import async_remove_panel
 from homeassistant.config_entries import ConfigEntry
 
-from . import panel
+from . import panel, websocket_api
 from .const import PANEL_URL_PATH
 from .store import HomeUpkeepStore
 
@@ -28,6 +28,7 @@ async def async_setup_entry(
     await store.async_load()
     entry.runtime_data = store
 
+    websocket_api.async_register(hass)
     await panel.async_register(hass)
     return True
 

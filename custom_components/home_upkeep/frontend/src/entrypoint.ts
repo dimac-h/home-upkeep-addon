@@ -10,13 +10,13 @@ interface HomeAssistant {
 /** Panel root element, registered by `panel.py` via `panel_custom`. */
 @customElement("home-upkeep-panel")
 export class HomeUpkeepPanel extends LitElement {
-  @property({ attribute: false }) accessor hass: HomeAssistant | undefined;
+  @property({ attribute: false }) hass: HomeAssistant | undefined;
 
-  @property({ type: Boolean }) accessor narrow = false;
+  @property({ type: Boolean }) narrow = false;
 
-  @property({ attribute: false }) accessor route: unknown;
+  @property({ attribute: false }) route: unknown;
 
-  @property({ attribute: false }) accessor panel: unknown;
+  @property({ attribute: false }) panel: unknown;
 
   static styles = css`
     :host {
