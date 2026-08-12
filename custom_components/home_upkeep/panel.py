@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.panel_custom import async_register_panel
-from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
+
+# ruff (TC002) wants type-only imports under TYPE_CHECKING to avoid an
+# unnecessary runtime import, since `from __future__ import annotations`
+# means annotations are never evaluated at runtime anyway.
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
 
 from .const import (
     DOMAIN,
