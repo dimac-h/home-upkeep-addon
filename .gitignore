@@ -53,6 +53,7 @@ pnpm-debug.log*
 # Misc
 *.local
 .idea/
+.claude/
 .store/
 
 # Local dev Home Assistant instance state
