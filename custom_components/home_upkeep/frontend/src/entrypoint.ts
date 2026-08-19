@@ -88,6 +88,8 @@ export class HomeUpkeepPanel extends LitElement {
 
   private _unsubscribe?: UnsubscribeFunc;
 
+  private _taskRefreshSeq = 0;
+
   static styles = [
     designTokens,
     buttonStyles,
@@ -299,6 +301,7 @@ export class HomeUpkeepPanel extends LitElement {
     super.disconnectedCallback();
     this._unsubscribe?.();
     this._unsubscribe = undefined;
+    this._api = undefined;
   }
 
   willUpdate(changed: PropertyValues): void {
@@ -341,6 +344,7 @@ export class HomeUpkeepPanel extends LitElement {
   }
 
   private async _refreshTasks(): Promise<void> {
+    const seq = ++this._taskRefreshSeq;
     if (this._selectedListId == null) {
       this._tasks = [];
       this._loading = false;
@@ -350,11 +354,17 @@ export class HomeUpkeepPanel extends LitElement {
     this._loading = true;
     this._error = null;
     try {
-      this._tasks = await this._api!.listTasks(this._selectedListId);
+      const tasks = await this._api!.listTasks(this._selectedListId);
+      // A newer refresh (e.g. from switching lists again) may have
+      // started and resolved while this one was in flight; discard this
+      // stale response rather than overwriting the current one.
+      if (seq !== this._taskRefreshSeq) return;
+      this._tasks = tasks;
     } catch (err) {
+      if (seq !== this._taskRefreshSeq) return;
       this._error = errorMessage(err);
     } finally {
-      this._loading = false;
+      if (seq === this._taskRefreshSeq) this._loading = false;
     }
   }
 
@@ -381,14 +391,22 @@ export class HomeUpkeepPanel extends LitElement {
           this._tasks = [event.task, ...this._tasks];
         }
         break;
-      case "task_updated":
-        if (event.task && event.list_id === this._selectedListId) {
-          const updated = event.task;
-          this._tasks = this._tasks.map((t) =>
-            t.id === updated.id ? updated : t,
-          );
+      case "task_updated": {
+        if (!event.task) break;
+        const updated = event.task;
+        // event.list_id is the task's *new* list_id, so a task moved out
+        // of the selected list must be removed rather than left stale,
+        // and one moved into it must be added rather than silently
+        // dropped by a no-op map over an id it doesn't contain yet.
+        if (event.list_id === this._selectedListId) {
+          this._tasks = this._tasks.some((t) => t.id === updated.id)
+            ? this._tasks.map((t) => (t.id === updated.id ? updated : t))
+            : [updated, ...this._tasks];
+        } else {
+          this._tasks = this._tasks.filter((t) => t.id !== updated.id);
         }
         break;
+      }
       case "task_deleted":
         if (event.task_id != null && event.list_id === this._selectedListId) {
           this._tasks = this._tasks.filter((t) => t.id !== event.task_id);
@@ -493,15 +511,19 @@ export class HomeUpkeepPanel extends LitElement {
       `Delete list "${list.name}"? This removes its tasks too.`,
     );
     if (!ok) return;
-    const listsBefore = this._lists;
     try {
       await this._api!.deleteList(id);
     } catch (err) {
       console.error(err);
       return;
     }
+    // Read `this._lists` fresh rather than a pre-await snapshot: the
+    // `list_deleted` event for this very call may already have arrived
+    // and updated it (dispatcher fires before the WS result — see
+    // CLAUDE.md's ordering-quirk note), and another client may have
+    // mutated the list set concurrently.
     if (this._selectedListId === id) {
-      const remaining = listsBefore.filter((x) => x.id !== id);
+      const remaining = this._lists.filter((x) => x.id !== id);
       this._selectedListId = remaining.length ? remaining[0]?.id : undefined;
     }
   }

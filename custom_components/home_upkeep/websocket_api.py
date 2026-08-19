@@ -72,7 +72,10 @@ def _create_followup_task(
     elif updated_at is not None:
         base_date = updated_at.date()
     elif task.completed_at is not None:
-        base_date = task.completed_at.date()
+        # completed_at is stored in UTC (see store.py); convert to local
+        # time before taking the date, or this reintroduces the
+        # raw-UTC day-early bug fixed in commit 8439bf6.
+        base_date = dt_util.as_local(task.completed_at).date()
     else:
         base_date = None
     base_date = base_date or dt_util.now().date()
@@ -266,7 +269,7 @@ async def handle_tasks_update(
         msg["task_id"],
         list_id=msg.get("list_id"),
         title=msg.get("title"),
-        description=msg.get("description"),
+        description=msg.get("description", _UNSET),
         completed=msg.get("completed"),
         due_date=msg.get("due_date", _UNSET),
         reschedule_period=msg.get("reschedule_period", _UNSET),

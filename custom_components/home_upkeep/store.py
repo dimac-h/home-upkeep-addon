@@ -10,6 +10,7 @@ dispatcher instead of a custom WebSocket `ConnectionManager`.
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from datetime import UTC, date, datetime
 from typing import Any
@@ -20,6 +21,8 @@ from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN, SIGNAL_UPKEEP_CHANGED, STORAGE_KEY, STORAGE_VERSION
 from .models import StoredList, StoredTask
+
+_LOGGER = logging.getLogger(__name__)
 
 SAVE_DELAY = 10
 
@@ -74,18 +77,31 @@ class HomeUpkeepStore:
         self._next_list_id = 1
 
     async def async_load(self) -> None:
-        """Load tasks and lists from storage."""
+        """Load tasks and lists from storage.
+
+        A malformed entry is logged and skipped rather than aborting the
+        whole load (and thus integration setup) — matching the old
+        `FileStore`, which skipped only the bad file.
+        """
         data = await self._store.async_load()
         if data is None:
             return
-        self._lists = {
-            item["id"]: StoredList.from_storage(item)
-            for item in data.get("lists", [])
-        }
-        self._tasks = {
-            item["id"]: StoredTask.from_storage(item)
-            for item in data.get("tasks", [])
-        }
+        self._lists = {}
+        for item in data.get("lists", []):
+            try:
+                lst = StoredList.from_storage(item)
+            except (KeyError, TypeError, ValueError):
+                _LOGGER.exception("Skipping malformed stored list: %s", item)
+                continue
+            self._lists[lst.id] = lst
+        self._tasks = {}
+        for item in data.get("tasks", []):
+            try:
+                task = StoredTask.from_storage(item)
+            except (KeyError, TypeError, ValueError):
+                _LOGGER.exception("Skipping malformed stored task: %s", item)
+                continue
+            self._tasks[task.id] = task
         if self._lists:
             self._next_list_id = max(self._lists) + 1
         if self._tasks:
@@ -213,13 +229,13 @@ class HomeUpkeepStore:
         )
         return task
 
-    def update_task(  # noqa: PLR0913
+    def update_task(  # noqa: PLR0912, PLR0913
         self,
         task_id: int,
         *,
         list_id: int | None = None,
         title: str | None = None,
-        description: str | None = None,
+        description: str | _Unset | None = _UNSET,
         completed: bool | None = None,
         due_date: date | _Unset | None = _UNSET,
         reschedule_period: str | _Unset | None = _UNSET,
@@ -231,11 +247,12 @@ class HomeUpkeepStore:
         """
         Update an existing task.
 
-        `due_date`, `reschedule_period`, `reschedule_base`, and
-        `completed_at` default to a sentinel (not `None`) so that passing
-        an explicit `None` clears the field, while omitting the argument
-        leaves it untouched — matching the WS API's nullable-field
-        contract (see `websocket_api.py`'s `vol.Any(None, ...)` schemas).
+        `description`, `due_date`, `reschedule_period`, `reschedule_base`,
+        and `completed_at` default to a sentinel (not `None`) so that
+        passing an explicit `None` clears the field, while omitting the
+        argument leaves it untouched — matching the WS API's
+        nullable-field contract (see `websocket_api.py`'s
+        `vol.Any(None, ...)` schemas).
         """
         task = self._tasks.get(task_id)
         if task is None:
@@ -245,11 +262,19 @@ class HomeUpkeepStore:
             task.list_id = list_id
         if title is not None:
             task.title = title
-        if description is not None:
+        if not isinstance(description, _Unset):
             task.description = description
         if completed is not None:
+            # Only stamp/clear completed_at on an actual transition, not
+            # on every save of an already-completed task (native `todo`
+            # UI edits and resaves resend the current `completed` value
+            # unconditionally) — otherwise completed_at drifts forward
+            # on unrelated edits.
+            if completed and not task.completed:
+                task.completed_at = now
+            elif not completed:
+                task.completed_at = None
             task.completed = completed
-            task.completed_at = now if completed else None
         if not isinstance(due_date, _Unset):
             task.due_date = due_date
         if not isinstance(reschedule_period, _Unset):

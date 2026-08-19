@@ -144,10 +144,12 @@ export class HomeUpkeepApi {
     return this.hass.connection.sendMessagePromise({
       type: "home_upkeep/tasks/update",
       task_id: taskId,
-      // Local timezone, so due dates recomputed on completion land on the
-      // correct local day (see CLAUDE.md's timezone-handling note).
-      updated_at: payload.updated_at ?? DateTime.now().toISO(),
       ...payload,
+      // Local timezone, so due dates recomputed on completion land on the
+      // correct local day (see CLAUDE.md's timezone-handling note). Set
+      // after the payload spread so it can't be clobbered by a caller
+      // that includes `updated_at` in its payload.
+      updated_at: payload.updated_at ?? DateTime.now().toISO(),
     });
   }
 
