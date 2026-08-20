@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
+from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN
@@ -28,15 +29,23 @@ from .store import ImportConflictError, async_get_store
 # unnecessary runtime import, since `from __future__ import annotations`
 # means annotations are never evaluated at runtime anyway.
 if TYPE_CHECKING:
-    from homeassistant.core import HomeAssistant, ServiceCall
+    from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse
 
     from .store import HomeUpkeepStore
 
 _LOGGER = logging.getLogger(__name__)
 
 SERVICE_IMPORT_FROM_JSON = "import_from_json"
+SERVICE_IMPORT_FROM_ADDON = "import_from_addon"
 
 _IMPORT_FROM_JSON_SCHEMA = vol.Schema({vol.Required("path"): str})
+
+_IMPORT_FROM_ADDON_SCHEMA = vol.Schema(
+    {
+        vol.Required("docs"): [dict],
+        vol.Optional("overwrite_list_ids"): [int],
+    }
+)
 
 
 def _parse_docs(
@@ -135,16 +144,61 @@ async def _async_handle_import_from_json(call: ServiceCall) -> None:
     )
 
 
+async def _async_handle_import_from_addon(call: ServiceCall) -> ServiceResponse:
+    """
+    Handle the `import_from_addon` service call.
+
+    Called by `home-upkeep-component` (a separate integration) once, the
+    first time it starts up alongside an already-loaded panel — see
+    `docs/superpowers/specs/2026-08-19-addon-to-panel-auto-migration-design.md`.
+    A conflict is reported back as normal response data rather than raised,
+    mirroring the `home_upkeep/import_json` WS command, since it's an
+    expected outcome the caller branches on (whether to retry with
+    `overwrite_list_ids`), not an exceptional one. The `migrated_from_addon`
+    flag is set on both outcomes: a conflict is still a completed attempt,
+    and retrying it automatically on every restart wouldn't resolve it.
+    """
+    store = async_get_store(call.hass)
+    overwrite_list_ids = set(call.data.get("overwrite_list_ids", []))
+    try:
+        list_count, task_count = await async_import_from_docs(
+            store, call.data["docs"], overwrite_list_ids=overwrite_list_ids
+        )
+    except ImportConflictError as err:
+        await store.async_mark_migrated_from_addon()
+        return {
+            "imported": False,
+            "conflicts": [
+                {"id": lst.id, "name": lst.name} for lst in err.conflicting_lists
+            ],
+        }
+    await store.async_mark_migrated_from_addon()
+    return {
+        "imported": True,
+        "conflicts": [],
+        "list_count": list_count,
+        "task_count": task_count,
+    }
+
+
 def async_register_services(hass: HomeAssistant) -> None:
-    """Register the `import_from_json` service."""
+    """Register the `import_from_json` and `import_from_addon` services."""
     hass.services.async_register(
         DOMAIN,
         SERVICE_IMPORT_FROM_JSON,
         _async_handle_import_from_json,
         schema=_IMPORT_FROM_JSON_SCHEMA,
     )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_IMPORT_FROM_ADDON,
+        _async_handle_import_from_addon,
+        schema=_IMPORT_FROM_ADDON_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
 
 
 def async_unregister_services(hass: HomeAssistant) -> None:
-    """Unregister the `import_from_json` service."""
+    """Unregister the `import_from_json` and `import_from_addon` services."""
     hass.services.async_remove(DOMAIN, SERVICE_IMPORT_FROM_JSON)
+    hass.services.async_remove(DOMAIN, SERVICE_IMPORT_FROM_ADDON)

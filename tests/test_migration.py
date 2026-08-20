@@ -134,6 +134,78 @@ async def test_service_import_from_json_refuses_conflicting_list_id(
         )
 
 
+async def test_service_import_from_addon_success(
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+) -> None:
+    """import_from_addon imports docs and marks the migrated_from_addon flag."""
+    docs = [{"version": 1, "list": LIST_DOC, "tasks": [TASK_DOC]}]
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        migration.SERVICE_IMPORT_FROM_ADDON,
+        {"docs": docs},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert response == {
+        "imported": True,
+        "conflicts": [],
+        "list_count": 1,
+        "task_count": 1,
+    }
+    store = async_get_store(hass)
+    assert [lst.id for lst in store.list_lists()] == [1]
+    assert store.migrated_from_addon is True
+
+
+async def test_service_import_from_addon_reports_conflict_and_still_marks_flag(
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+) -> None:
+    """A conflicting list is reported, not raised, and the flag is still set."""
+    store = async_get_store(hass)
+    store.create_list("Existing")  # takes list ID 1, matching LIST_DOC's ID
+    docs = [{"version": 1, "list": LIST_DOC, "tasks": [TASK_DOC]}]
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        migration.SERVICE_IMPORT_FROM_ADDON,
+        {"docs": docs},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert response == {
+        "imported": False,
+        "conflicts": [{"id": 1, "name": "Existing"}],
+    }
+    assert store.migrated_from_addon is True
+
+
+async def test_service_import_from_addon_overwrite_list_ids(
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+) -> None:
+    """A confirmed overwrite_list_ids resolves the conflict and imports."""
+    store = async_get_store(hass)
+    store.create_list("Existing")  # takes list ID 1
+    docs = [{"version": 1, "list": LIST_DOC, "tasks": [TASK_DOC]}]
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        migration.SERVICE_IMPORT_FROM_ADDON,
+        {"docs": docs, "overwrite_list_ids": [1]},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert response["imported"] is True
+    [lst] = store.list_lists()
+    assert lst.name == "Cleaning"
+
+
 async def test_service_import_from_json_reports_malformed_file(
     setup_integration: MockConfigEntry,
     hass: HomeAssistant,

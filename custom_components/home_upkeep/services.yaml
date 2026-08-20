@@ -5,3 +5,16 @@ import_from_json:
       example: "/config/home_upkeep_import"
       selector:
         text:
+
+import_from_addon:
+  fields:
+    docs:
+      required: true
+      example: '[{"version": 1, "list": {...}, "tasks": [...]}]'
+      selector:
+        object:
+    overwrite_list_ids:
+      required: false
+      example: "[1, 2]"
+      selector:
+        object:
