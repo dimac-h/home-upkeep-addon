@@ -83,12 +83,14 @@ export interface HomeUpkeepEvent {
     | "list_created"
     | "list_updated"
     | "list_deleted"
-    | "data_imported";
+    | "data_imported"
+    | "migrated_from_addon";
   list_id?: number;
   task?: Task;
   created_task?: Task | null;
   task_id?: number;
   list?: TaskList;
+  migrated_from_addon?: boolean;
 }
 
 /** Thin typed wrapper over `hass.connection` for the home_upkeep WS commands. */
@@ -181,6 +183,12 @@ export class HomeUpkeepApi {
       type: "home_upkeep/import_json",
       docs,
       overwrite_list_ids: overwriteListIds,
+    });
+  }
+
+  getMigrationStatus(): Promise<{ migrated_from_addon: boolean }> {
+    return this.hass.connection.sendMessagePromise({
+      type: "home_upkeep/migration_status",
     });
   }
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING
 
+from custom_components.home_upkeep.store import async_get_store
+
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
     from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -660,3 +662,23 @@ async def test_import_json_rejects_malformed_docs(
     resp = await client.receive_json()
     assert resp["success"] is False
     assert resp["error"]["code"] == "invalid_format"
+
+
+async def test_migration_status_reflects_store_flag(
+    setup_integration: MockConfigEntry,
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """migration_status returns the store's migrated_from_addon flag."""
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id({"type": "home_upkeep/migration_status"})
+    resp = await client.receive_json()
+    assert resp["result"] == {"migrated_from_addon": False}
+
+    store = async_get_store(hass)
+    await store.async_mark_migrated_from_addon()
+
+    await client.send_json_auto_id({"type": "home_upkeep/migration_status"})
+    resp = await client.receive_json()
+    assert resp["result"] == {"migrated_from_addon": True}

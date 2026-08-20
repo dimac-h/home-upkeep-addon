@@ -72,6 +72,10 @@ export class HomeUpkeepPanel extends LitElement {
 
   @state() private _error: string | null = null;
 
+  @state() private _migratedFromAddon = false;
+
+  @state() private _addonBannerDismissed = false;
+
   @state() private _mobileMenuOpen = false;
 
   @state() private _showCreateFormMobile = false;
@@ -215,6 +219,32 @@ export class HomeUpkeepPanel extends LitElement {
         margin-left: 0.75rem;
         color: var(--hu-gray-600);
       }
+      .addon-banner {
+        margin-bottom: 1.5rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--hu-red-200);
+        background: var(--hu-red-50);
+        padding: 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      .addon-banner-text {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--hu-red-800);
+      }
+      .addon-banner-dismiss {
+        border: none;
+        background: none;
+        color: var(--hu-red-800);
+        cursor: pointer;
+        font-size: 1rem;
+        line-height: 1;
+        padding: 0.25rem;
+        flex-shrink: 0;
+      }
       .error-banner {
         margin-bottom: 1.5rem;
         border-radius: 0.5rem;
@@ -273,6 +303,14 @@ export class HomeUpkeepPanel extends LitElement {
         .loading-text {
           color: var(--hu-gray-400);
         }
+        .addon-banner {
+          border-color: var(--hu-red-800);
+          background: rgb(127 29 29 / 0.2);
+        }
+        .addon-banner-text,
+        .addon-banner-dismiss {
+          color: var(--hu-red-300);
+        }
         .error-banner {
           border-color: var(--hu-red-800);
           background: rgb(127 29 29 / 0.2);
@@ -330,9 +368,19 @@ export class HomeUpkeepPanel extends LitElement {
   private async _init(): Promise<void> {
     this._api = new HomeUpkeepApi(this.hass);
     await this._refreshLists();
+    await this._refreshMigrationStatus();
     this._unsubscribe = await this._api.subscribe((event) => {
       this._handleEvent(event);
     });
+  }
+
+  private async _refreshMigrationStatus(): Promise<void> {
+    try {
+      const status = await this._api!.getMigrationStatus();
+      this._migratedFromAddon = status.migrated_from_addon;
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   private async _refreshLists(): Promise<void> {
@@ -411,6 +459,9 @@ export class HomeUpkeepPanel extends LitElement {
         if (event.task_id != null && event.list_id === this._selectedListId) {
           this._tasks = this._tasks.filter((t) => t.id !== event.task_id);
         }
+        break;
+      case "migrated_from_addon":
+        this._migratedFromAddon = event.migrated_from_addon ?? true;
         break;
       case "data_imported":
         // An import (possibly from another connected client) may have
@@ -647,6 +698,23 @@ export class HomeUpkeepPanel extends LitElement {
 
     return html`
       <div class="page">
+        ${this._migratedFromAddon && !this._addonBannerDismissed
+          ? html`<div class="addon-banner">
+              <div class="addon-banner-text">
+                Home Upkeep add-on detected — its data has been migrated to
+                this panel. You can uninstall the add-on now.
+              </div>
+              <button
+                class="addon-banner-dismiss"
+                aria-label="Dismiss"
+                @click=${() => {
+                  this._addonBannerDismissed = true;
+                }}
+              >
+                ✕
+              </button>
+            </div>`
+          : null}
         <div class="layout">
           <home-upkeep-task-lists
             .lists=${this._lists}

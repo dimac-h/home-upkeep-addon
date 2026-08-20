@@ -404,6 +404,20 @@ async def handle_import_json(
     )
 
 
+@websocket_api.websocket_command(
+    {vol.Required("type"): "home_upkeep/migration_status"}
+)
+@callback
+def handle_migration_status(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Report whether an automatic add-on migration has completed."""
+    store = async_get_store(hass)
+    connection.send_result(
+        msg["id"], {"migrated_from_addon": store.migrated_from_addon}
+    )
+
+
 # -------- Subscription --------
 
 
@@ -437,4 +451,5 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_tasks_snooze)
     websocket_api.async_register_command(hass, handle_tasks_delete)
     websocket_api.async_register_command(hass, handle_import_json)
+    websocket_api.async_register_command(hass, handle_migration_status)
     websocket_api.async_register_command(hass, handle_subscribe)
