@@ -97,6 +97,7 @@ async def async_import_from_docs(
     docs: list[dict[str, Any]],
     *,
     overwrite_list_ids: set[int] | None = None,
+    remap_conflicting_list_ids: bool = False,
 ) -> tuple[int, int]:
     """
     Import lists/tasks from already-parsed `{version, list, tasks}` docs.
@@ -104,13 +105,16 @@ async def async_import_from_docs(
     Used by the panel's Import button: the browser reads the user's
     `list_<id>.json` files directly (via the File API) and sends their
     parsed content over the WS connection, so no `/config` filesystem
-    access is needed at all.
+    access is needed at all. Also used by the `import_from_addon` service.
 
     Args:
         store: The store to import into.
         docs: Parsed `{version, list, tasks}` docs, one per list.
         overwrite_list_ids: IDs of conflicting lists the user has confirmed
             overwriting (see `HomeUpkeepStore.async_import`).
+        remap_conflicting_list_ids: give any other conflicting list a
+            fresh ID instead of raising `ImportConflictError` (see
+            `HomeUpkeepStore.async_import`).
 
     Returns:
         The number of (lists, tasks) imported.
@@ -118,7 +122,10 @@ async def async_import_from_docs(
     """
     lists, tasks = _parse_docs(docs)
     return await store.async_import(
-        lists, tasks, overwrite_list_ids=overwrite_list_ids
+        lists,
+        tasks,
+        overwrite_list_ids=overwrite_list_ids,
+        remap_conflicting_list_ids=remap_conflicting_list_ids,
     )
 
 
@@ -151,27 +158,23 @@ async def _async_handle_import_from_addon(call: ServiceCall) -> ServiceResponse:
     Called by `home-upkeep-component` (a separate integration) once, the
     first time it starts up alongside an already-loaded panel — see
     `docs/superpowers/specs/2026-08-19-addon-to-panel-auto-migration-design.md`.
-    A conflict is reported back as normal response data rather than raised,
-    mirroring the `home_upkeep/import_json` WS command, since it's an
-    expected outcome the caller branches on (whether to retry with
-    `overwrite_list_ids`), not an exceptional one. The `migrated_from_addon`
-    flag is set on both outcomes: a conflict is still a completed attempt,
-    and retrying it automatically on every restart wouldn't resolve it.
+    A list ID colliding with an existing panel list is remapped to a fresh
+    ID rather than rejected: this is an unattended, one-shot migration with
+    no user available to confirm an overwrite, and list IDs are
+    independently sequential in both the add-on and the panel, so a
+    collision on first migration (e.g. both starting at ID 1) is the
+    common case, not a rare one. Pass the colliding ID in
+    `overwrite_list_ids` instead to replace that list (and its tasks) in
+    place.
     """
     store = async_get_store(call.hass)
     overwrite_list_ids = set(call.data.get("overwrite_list_ids", []))
-    try:
-        list_count, task_count = await async_import_from_docs(
-            store, call.data["docs"], overwrite_list_ids=overwrite_list_ids
-        )
-    except ImportConflictError as err:
-        await store.async_mark_migrated_from_addon()
-        return {
-            "imported": False,
-            "conflicts": [
-                {"id": lst.id, "name": lst.name} for lst in err.conflicting_lists
-            ],
-        }
+    list_count, task_count = await async_import_from_docs(
+        store,
+        call.data["docs"],
+        overwrite_list_ids=overwrite_list_ids,
+        remap_conflicting_list_ids=True,
+    )
     await store.async_mark_migrated_from_addon()
     return {
         "imported": True,

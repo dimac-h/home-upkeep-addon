@@ -128,29 +128,53 @@ class HomeUpkeepStore:
         tasks: list[StoredTask],
         *,
         overwrite_list_ids: set[int] | None = None,
+        remap_conflicting_list_ids: bool = False,
     ) -> tuple[int, int]:
         """
         Merge previously-exported lists/tasks into the store, preserving IDs.
 
-        A list whose ID already exists is a conflict: unless its ID is in
-        `overwrite_list_ids`, the whole import is refused via
-        `ImportConflictError` (carrying the existing lists that would be
-        overwritten) so the caller can ask the user to confirm and retry.
-        Confirmed lists have their existing tasks replaced entirely. Task IDs are
-        remapped on collision with an unrelated task, since preserving the
-        original ID only matters when it doesn't clash with anything.
+        A list whose ID already exists is a conflict. Unless its ID is in
+        `overwrite_list_ids`, one of two things happens:
+
+        - `remap_conflicting_list_ids=False` (default, used by the manual
+          import paths, where a user is available to decide): the whole
+          import is refused via `ImportConflictError` (carrying the
+          existing lists that would be overwritten) so the caller can ask
+          the user to confirm and retry.
+        - `remap_conflicting_list_ids=True` (used by the unattended
+          automatic add-on migration, where there is no user to ask):
+          the incoming list is assigned a fresh, unused ID instead, along
+          with its tasks. List IDs are independently sequential in both
+          the add-on and the panel, so a collision on first migration
+          (e.g. both starting at ID 1) is the common case, not a rare one.
+
+        Confirmed overwrites have their existing tasks replaced entirely.
+        Task IDs are remapped on collision with an unrelated task, since
+        preserving the original ID only matters when it doesn't clash with
+        anything.
         """
         overwrite_list_ids = overwrite_list_ids or set()
-        conflicts = [
-            self._lists[lst.id]
+        conflicting_lists = [
+            lst
             for lst in lists
             if lst.id in self._lists and lst.id not in overwrite_list_ids
         ]
-        if conflicts:
-            raise ImportConflictError(conflicts)
+        if conflicting_lists and not remap_conflicting_list_ids:
+            raise ImportConflictError(
+                [self._lists[lst.id] for lst in conflicting_lists]
+            )
+
+        remapped_list_ids: dict[int, int] = {}
+        for lst in conflicting_lists:
+            new_id = self._next_list_id
+            self._next_list_id += 1
+            remapped_list_ids[lst.id] = new_id
+            lst.id = new_id
 
         tasks_by_list: dict[int, list[StoredTask]] = defaultdict(list)
         for task in tasks:
+            if task.list_id in remapped_list_ids:
+                task.list_id = remapped_list_ids[task.list_id]
             tasks_by_list[task.list_id].append(task)
 
         for lst in lists:

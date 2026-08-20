@@ -311,6 +311,70 @@ async def test_async_import_overwrites_confirmed_conflict(
     assert task.title == "New task"
 
 
+async def test_async_import_remaps_conflicting_list_id_when_requested(
+    hass: HomeAssistant,
+) -> None:
+    """A conflicting list ID gets a fresh ID instead of being refused."""
+    store = HomeUpkeepStore(hass)
+    await store.async_load()
+    existing = store.create_list("Existing")  # takes list ID 1
+
+    list_count, task_count = await store.async_import(
+        [_imported_list(1, "Cleaning")],
+        [_imported_task(5, 1, "Mop floors")],
+        remap_conflicting_list_ids=True,
+    )
+
+    assert (list_count, task_count) == (1, 1)
+    lists_by_name = {lst.name: lst for lst in store.list_lists()}
+    assert lists_by_name["Existing"].id == existing.id
+    imported = lists_by_name["Cleaning"]
+    assert imported.id != existing.id
+    [task] = store.list_tasks(imported.id)
+    assert task.title == "Mop floors"
+
+
+async def test_async_import_remap_does_not_affect_non_conflicting_lists(
+    hass: HomeAssistant,
+) -> None:
+    """A non-conflicting list ID is preserved even when remap is enabled."""
+    store = HomeUpkeepStore(hass)
+    await store.async_load()
+    imported_list_id = 99
+
+    await store.async_import(
+        [_imported_list(imported_list_id, "Cleaning")],
+        [_imported_task(1, imported_list_id, "Mop floors")],
+        remap_conflicting_list_ids=True,
+    )
+
+    [lst] = store.list_lists()
+    assert lst.id == imported_list_id
+
+
+async def test_async_import_overwrite_takes_priority_over_remap(
+    hass: HomeAssistant,
+) -> None:
+    """A list ID in both overwrite_list_ids and remap-eligible is overwritten."""
+    store = HomeUpkeepStore(hass)
+    await store.async_load()
+    existing_list = store.create_list("Existing")  # takes list ID 1
+    store.create_task(existing_list.id, "Old task", None)
+
+    await store.async_import(
+        [_imported_list(1, "Cleaning")],
+        [_imported_task(1, 1, "New task")],
+        overwrite_list_ids={1},
+        remap_conflicting_list_ids=True,
+    )
+
+    [lst] = store.list_lists()
+    assert lst.id == 1
+    assert lst.name == "Cleaning"
+    [task] = store.list_tasks(1)
+    assert task.title == "New task"
+
+
 async def test_migrated_from_addon_defaults_false(hass: HomeAssistant) -> None:
     """A fresh store has not been marked as migrated from the add-on."""
     store = HomeUpkeepStore(hass)

@@ -160,13 +160,21 @@ async def test_service_import_from_addon_success(
     assert store.migrated_from_addon is True
 
 
-async def test_service_import_from_addon_reports_conflict_and_still_marks_flag(
+async def test_service_import_from_addon_remaps_conflicting_list_id(
     setup_integration: MockConfigEntry,
     hass: HomeAssistant,
 ) -> None:
-    """A conflicting list is reported, not raised, and the flag is still set."""
+    """
+    A conflicting list ID is remapped and imported, not rejected.
+
+    List IDs are independently sequential in both the add-on and the
+    panel, so a collision on first migration (e.g. both starting at ID 1)
+    is the common case — this is an unattended migration, so there's no
+    user to ask about an overwrite; regression test for the bug where a
+    collision silently blocked migration forever (see git history).
+    """
     store = async_get_store(hass)
-    store.create_list("Existing")  # takes list ID 1, matching LIST_DOC's ID
+    existing = store.create_list("Existing")  # takes list ID 1, matching LIST_DOC
     docs = [{"version": 1, "list": LIST_DOC, "tasks": [TASK_DOC]}]
 
     response = await hass.services.async_call(
@@ -178,9 +186,17 @@ async def test_service_import_from_addon_reports_conflict_and_still_marks_flag(
     )
 
     assert response == {
-        "imported": False,
-        "conflicts": [{"id": 1, "name": "Existing"}],
+        "imported": True,
+        "conflicts": [],
+        "list_count": 1,
+        "task_count": 1,
     }
+    lists_by_name = {lst.name: lst for lst in store.list_lists()}
+    assert lists_by_name["Existing"].id == existing.id
+    imported = lists_by_name["Cleaning"]
+    assert imported.id != existing.id
+    [task] = store.list_tasks(imported.id)
+    assert task.title == TASK_DOC["title"]
     assert store.migrated_from_addon is True
 
 
