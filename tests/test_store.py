@@ -309,3 +309,38 @@ async def test_async_import_overwrites_confirmed_conflict(
     assert lst.name == "Cleaning"
     [task] = store.list_tasks(1)
     assert task.title == "New task"
+
+
+async def test_migrated_from_addon_defaults_false(hass: HomeAssistant) -> None:
+    """A fresh store has not been marked as migrated from the add-on."""
+    store = HomeUpkeepStore(hass)
+    await store.async_load()
+
+    assert store.migrated_from_addon is False
+
+
+async def test_async_mark_migrated_from_addon_sets_flag_and_notifies(
+    hass: HomeAssistant,
+) -> None:
+    """Marking the flag persists it and dispatches a change event."""
+    store = HomeUpkeepStore(hass)
+    await store.async_load()
+    events: list[dict] = []
+    async_dispatcher_connect(hass, SIGNAL_UPKEEP_CHANGED, events.append)
+
+    await store.async_mark_migrated_from_addon()
+
+    assert store.migrated_from_addon is True
+    assert events == [{"type": "migrated_from_addon", "migrated_from_addon": True}]
+
+
+async def test_migrated_from_addon_flag_survives_reload(hass: HomeAssistant) -> None:
+    """The flag is persisted, not just in-memory."""
+    store = HomeUpkeepStore(hass)
+    await store.async_load()
+    await store.async_mark_migrated_from_addon()
+
+    reloaded = HomeUpkeepStore(hass)
+    await reloaded.async_load()
+
+    assert reloaded.migrated_from_addon is True

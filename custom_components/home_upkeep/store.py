@@ -75,6 +75,7 @@ class HomeUpkeepStore:
         self._lists: dict[int, StoredList] = {}
         self._next_task_id = 1
         self._next_list_id = 1
+        self._migrated_from_addon = False
 
     async def async_load(self) -> None:
         """Load tasks and lists from storage.
@@ -86,6 +87,7 @@ class HomeUpkeepStore:
         data = await self._store.async_load()
         if data is None:
             return
+        self._migrated_from_addon = bool(data.get("migrated_from_addon", False))
         self._lists = {}
         for item in data.get("lists", []):
             try:
@@ -112,6 +114,7 @@ class HomeUpkeepStore:
         return {
             "lists": [lst.to_storage() for lst in self._lists.values()],
             "tasks": [task.to_storage() for task in self._tasks.values()],
+            "migrated_from_addon": self._migrated_from_addon,
         }
 
     @callback
@@ -180,6 +183,28 @@ class HomeUpkeepStore:
             },
         )
         return len(lists), len(tasks)
+
+    @property
+    def migrated_from_addon(self) -> bool:
+        """Whether an automatic add-on migration has already completed."""
+        return self._migrated_from_addon
+
+    async def async_mark_migrated_from_addon(self) -> None:
+        """
+        Record that an automatic add-on migration attempt has completed.
+
+        Set on both success and conflict (see `migration.py`'s
+        `import_from_addon` service) — this flag only drives the panel's
+        "uninstall the add-on" banner, it is never read by import logic
+        itself, so a conflict still counts as "attempted."
+        """
+        self._migrated_from_addon = True
+        await self._store.async_save(self._data_to_save())
+        async_dispatcher_send(
+            self._hass,
+            SIGNAL_UPKEEP_CHANGED,
+            {"type": "migrated_from_addon", "migrated_from_addon": True},
+        )
 
     # -------- Tasks --------
 
